@@ -54,8 +54,9 @@ class GestureBridgeNode(dai.node.HostNode):
         self._confidence_threshold = 0.7
         self._tracker = GestureTracker()
 
-        # Avvia il server WebSocket (idempotente)
-        websocket_server.start(host="0.0.0.0", port=8765)
+        # Avvia il server WebSocket (idempotente).
+        # NB: porta 8766 — la 8765 è già usata internamente da DepthAI v3.
+        websocket_server.start(host="0.0.0.0", port=8766)
 
     def build(
         self,
