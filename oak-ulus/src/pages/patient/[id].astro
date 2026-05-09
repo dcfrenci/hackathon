@@ -1,0 +1,19 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ScanSelector from '../../components/ScanSelector.jsx';
+
+export function getStaticPaths() {
+  return [
+    { params: { id: '8842-XJ' } },
+    { params: { id: '9102-LK' } },
+    { params: { id: '7721-OP' } },
+    { params: { id: '3349-QC' } },
+  ];
+}
+
+const { id } = Astro.params;
+---
+
+<Layout title="OAK-ULUS | Medical Records" currentPage="PATIENT RECORDS">
+	<ScanSelector patientId={id} client:load />
+</Layout>

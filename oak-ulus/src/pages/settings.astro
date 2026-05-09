@@ -1,0 +1,180 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="OAK-ULUS | SETTINGS" currentPage="SYSTEM SETTINGS">
+	<main class="settings-container">
+		<div class="glass-panel settings-card">
+			<h2 style="margin-bottom: 32px; font-weight: 300; letter-spacing: 0.1em;">SURGEON PREFERENCES</h2>
+			
+			<div class="setting-item">
+				<div class="setting-info">
+					<h3>HANDEDNESS</h3>
+					<p>Adjust interface layout for your dominant hand</p>
+				</div>
+				<div class="handedness-toggle">
+					<button class="hand-btn active" id="btn-right">RIGHT HAND</button>
+					<button class="hand-btn" id="btn-left">LEFT HAND</button>
+				</div>
+			</div>
+
+            <div style="margin-top: 40px; display: flex; gap: 16px;">
+                <a href="/" class="action-btn secondary">BACK TO TERMINAL</a>
+                <button class="action-btn primary" id="btn-save">SAVE CHANGES</button>
+            </div>
+		</div>
+	</main>
+</Layout>
+
+<style>
+	.settings-container {
+		width: 100vw;
+		height: calc(100vh - 60px);
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		background: radial-gradient(circle at center, #0a0a0c 0%, #050507 100%);
+	}
+
+	.settings-card {
+		width: 600px;
+		padding: 48px;
+		border-radius: 32px;
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		box-shadow: 0 40px 100px rgba(0,0,0,0.5);
+	}
+
+	.setting-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 24px 0;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.setting-info h3 {
+		font-size: 14px;
+		color: var(--primary);
+		margin-bottom: 4px;
+		letter-spacing: 0.05em;
+	}
+
+	.setting-info p {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.handedness-toggle {
+		display: flex;
+		background: rgba(255, 255, 255, 0.03);
+		padding: 4px;
+		border-radius: 12px;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.hand-btn {
+		padding: 10px 20px;
+		border: none;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.5);
+		font-size: 11px;
+		font-weight: bold;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: all 0.3s ease;
+	}
+
+	.hand-btn.active {
+		background: var(--primary);
+		color: #fff;
+		box-shadow: 0 4px 12px rgba(41, 98, 255, 0.3);
+	}
+
+    .action-btn {
+        padding: 14px 28px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: bold;
+        text-decoration: none;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+    }
+
+    .action-btn.primary {
+        background: var(--primary);
+        color: #fff;
+    }
+
+    .action-btn.secondary {
+        background: rgba(255, 255, 255, 0.05);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .action-btn:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.2);
+    }
+
+	.toggle-switch {
+		width: 44px;
+		height: 22px;
+		background: rgba(255, 255, 255, 0.1);
+		border-radius: 11px;
+		position: relative;
+	}
+
+	.toggle-switch::after {
+		content: '';
+		position: absolute;
+		left: 2px;
+		top: 2px;
+		width: 18px;
+		height: 18px;
+		background: #555;
+		border-radius: 50%;
+	}
+</style>
+
+<script>
+	const btnRight = document.getElementById('btn-right');
+	const btnLeft = document.getElementById('btn-left');
+	const btnSave = document.getElementById('btn-save');
+
+	if (btnRight && btnLeft && btnSave) {
+		// Load initial state
+		const savedHand = localStorage.getItem('oak-ulus-handedness') || 'right';
+		if (savedHand === 'left') {
+			btnLeft.classList.add('active');
+			btnRight.classList.remove('active');
+		} else {
+			btnRight.classList.add('active');
+			btnLeft.classList.remove('active');
+		}
+
+		let currentHand = savedHand;
+
+		btnRight.addEventListener('click', () => {
+			btnRight.classList.add('active');
+			btnLeft.classList.remove('active');
+			currentHand = 'right';
+		});
+
+		btnLeft.addEventListener('click', () => {
+			btnLeft.classList.add('active');
+			btnRight.classList.remove('active');
+			currentHand = 'left';
+		});
+
+		btnSave.addEventListener('click', () => {
+			localStorage.setItem('oak-ulus-handedness', currentHand);
+			// Visual feedback
+			btnSave.textContent = 'SAVED!';
+			setTimeout(() => {
+				window.location.href = '/';
+			}, 500);
+		});
+	}
+</script>
