@@ -139,13 +139,14 @@ import Layout from '../layouts/Layout.astro';
 </style>
 
 <script>
+	import { getGestureClient, HANDEDNESS_STORAGE_KEY, DEFAULT_HANDEDNESS } from '../lib/gestureClient.js';
+
 	const btnRight = document.getElementById('btn-right');
 	const btnLeft = document.getElementById('btn-left');
 	const btnSave = document.getElementById('btn-save');
 
 	if (btnRight && btnLeft && btnSave) {
-		// Load initial state
-		const savedHand = localStorage.getItem('oak-ulus-handedness') || 'right';
+		const savedHand = localStorage.getItem(HANDEDNESS_STORAGE_KEY) || DEFAULT_HANDEDNESS;
 		if (savedHand === 'left') {
 			btnLeft.classList.add('active');
 			btnRight.classList.remove('active');
@@ -169,8 +170,8 @@ import Layout from '../layouts/Layout.astro';
 		});
 
 		btnSave.addEventListener('click', () => {
-			localStorage.setItem('oak-ulus-handedness', currentHand);
-			// Visual feedback
+			// setHandedness() salva in localStorage e notifica il backend via WS.
+			getGestureClient().setHandedness(currentHand);
 			btnSave.textContent = 'SAVED!';
 			setTimeout(() => {
 				window.location.href = '/';

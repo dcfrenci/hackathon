@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useGesture } from '../lib/useGesture.js';
 
 const patients = [
   { id: '8842-XJ', name: 'Mario Rossi', dept: 'CARDIOLOGY', status: 'READY FOR PREP', time: '08:30 AM', image: '/profiles/mario.png' },
@@ -29,6 +30,14 @@ export default function PatientSelector() {
       window.location.href = `/patient/${patients[selectedIndex].id}/`;
     }, 450);
   };
+
+  useGesture({
+    drag_up:     () => handlePrev(),
+    drag_down:   () => handleNext(),
+    swipe_left:  () => handlePrev(),
+    swipe_right: () => handleNext(),
+    click:       () => handleSelect(),
+  }, [selectedIndex]);
 
   return (
     <div className="container" style={{ position: 'relative' }}>

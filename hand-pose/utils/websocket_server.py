@@ -33,20 +33,29 @@ _thread: Optional[threading.Thread] = None
 _clients: set = set()
 _started: bool = False
 _lock = threading.Lock()
+_message_handler = None  # callback(dict) — chiamato sui messaggi in arrivo
 
 
 # ── Internals ─────────────────────────────────────────────────────────────────
 
 async def _handler(websocket):
-    """Registra il client e tienilo connesso finché non si stacca."""
+    """Registra il client, tienilo connesso e inoltra i messaggi JSON in arrivo
+    al callback registrato con `on_message`."""
     _clients.add(websocket)
     print(f"[ws] client connesso ({len(_clients)} totali) "
           f"da {websocket.remote_address}")
     try:
-        # Tieni la connessione aperta. Ignoriamo i messaggi in arrivo
-        # (la web app è solo consumer); se vuoi comandi bidirezionali,
-        # leggi qui con `async for msg in websocket: ...`
-        await websocket.wait_closed()
+        async for raw in websocket:
+            if _message_handler is None:
+                continue
+            try:
+                msg = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            try:
+                _message_handler(msg)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[ws] errore nel message handler: {exc}")
     finally:
         _clients.discard(websocket)
         print(f"[ws] client disconnesso ({len(_clients)} rimanenti)")
@@ -152,3 +161,11 @@ def stop() -> None:
 def client_count() -> int:
     """Numero di client web attualmente connessi."""
     return len(_clients)
+
+
+def on_message(handler) -> None:
+    """Registra un callback per i messaggi JSON in arrivo dai client.
+    Il callback viene invocato dal thread del loop asyncio: se serve toccare
+    stato condiviso con la pipeline, sincronizzare lato chiamante."""
+    global _message_handler
+    _message_handler = handler

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useGesture } from '../lib/useGesture.js';
 
 const xrayImages = [
   "Screenshot 2026-05-09 at 19.33.51.png",
@@ -37,6 +38,11 @@ export default function XrayCarousel({ patientId = "patient_1" }) {
   const handleNext = () => {
     setCurrentIndex((prev) => (prev < xrayImages.length - 1 ? prev + 1 : 0));
   };
+
+  useGesture({
+    swipe_left: () => handlePrev(),
+    swipe_right: () => handleNext(),
+  });
 
   // Preload images for smooth scrubbing
   useEffect(() => {

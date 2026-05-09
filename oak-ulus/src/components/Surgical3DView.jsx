@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber';
 import { OrbitControls, Text, Center, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+import { useGesture } from '../lib/useGesture.js';
 
 const AnatomicalAxes = () => {
   return (
@@ -97,6 +98,20 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
   const [rotY, setRotY] = useState(30);
   const [stlPath, setStlPath] = useState('');
   const [scanTitle, setScanTitle] = useState('ANATOMICAL MODEL');
+
+  useGesture({
+    click: () => setActiveTool((t) => (t === 'ROTATE' ? 'ZOOM' : 'ROTATE')),
+    drag_left:  () => setRotX((x) => (x - 10 + 360) % 360),
+    drag_right: () => setRotX((x) => (x + 10) % 360),
+    drag_up: () => {
+      if (activeTool === 'ZOOM') setZoomValue((v) => Math.min(v + 50, 1000));
+      else setRotY((y) => Math.min(y + 5, 85));
+    },
+    drag_down: () => {
+      if (activeTool === 'ZOOM') setZoomValue((v) => Math.max(v - 50, 0));
+      else setRotY((y) => Math.max(y - 5, -85));
+    },
+  }, [activeTool]);
 
   useEffect(() => {
     // Robust path detection

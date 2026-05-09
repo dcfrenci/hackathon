@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useGesture } from '../lib/useGesture.js';
 
 const scans = [
   { type: '3D RENDER', title: 'CARDIAC 3D', source: 'MRI-S4 · 12.04.2024', img: '/assets/cardiac.png', slug: 'cardiac-3d' },
@@ -33,6 +34,14 @@ export default function ScanSelector() {
       window.location.href = `/viewer/${patientId}/${scans[selectedIndex].slug}/`;
     }, 450);
   };
+
+  useGesture({
+    drag_up:     () => handleUp(),
+    drag_down:   () => handleDown(),
+    swipe_left:  () => handleUp(),
+    swipe_right: () => handleDown(),
+    click:       () => handleSelect(),
+  }, [selectedIndex]);
 
   return (
     <main className="container">

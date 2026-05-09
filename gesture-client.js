@@ -1,38 +1,40 @@
 /**
  * gesture-client.js
- * Ponte WebSocket tra il backend OAK-D (gesture_bridge_node.py) e la tua webapp.
+ * Ponte WebSocket tra il backend OAK-D (hand-pose/utils/gesture_bridge_node.py)
+ * e la web app. Per l'integrazione Astro/React, usa il wrapper in
+ * `oak-ulus/src/lib/gestureClient.js` (singleton + hook `useGesture`).
  *
- * UTILIZZO — importa e registra i listener per le gesture che ti servono:
+ * UTILIZZO standalone:
  *
  *   import { GestureClient } from './gesture-client.js';
  *
  *   const gestures = new GestureClient();      // porta default 8765
  *   // oppure: new GestureClient({ port: 9000, debug: true })
  *
- *   gestures.on('swipe_left',  ()      => prevSlide());
- *   gestures.on('swipe_right', ()      => nextSlide());
- *   gestures.on('scroll',      (value) => zoom(value));
- *   gestures.on('pinch_start', ()      => highlight());
- *   gestures.on('pinch_end',   ()      => select());
- *   gestures.on('reset_view',  ()      => resetView());
- *   gestures.on('zoom_in',     ()      => zoomIn());
- *   gestures.on('zoom_out',    ()      => zoomOut());
+ *   gestures.on('swipe_left',  () => prevSlide());
+ *   gestures.on('swipe_right', () => nextSlide());
+ *   gestures.on('drag_left',   () => rotateYaw(-10));
+ *   gestures.on('drag_right',  () => rotateYaw(+10));
+ *   gestures.on('drag_up',     () => pitchOrZoom(+1));
+ *   gestures.on('drag_down',   () => pitchOrZoom(-1));
+ *   gestures.on('click',       () => toggleTool());
  *
  *   // Per smontare (es. React useEffect cleanup):
  *   gestures.destroy();
  *
- * GESTURE DISPONIBILI (dal backend gesture_bridge_node.py):
- *   pinch_start   — pollice + indice si toccano
- *   pinch_end     — pinch rilasciato
+ * GESTURE EMESSE DAL BACKEND (gesture_bridge_node.py):
+ *   click         — PINCH breve (pollice+indice) trattenuto 80ms–1.5s e rilasciato
  *   swipe_left    — palma aperta (FIVE) + movimento orizzontale sx
  *   swipe_right   — palma aperta (FIVE) + movimento orizzontale dx
- *   scroll        — FIVE o ONE + movimento verticale, value = delta (pos=su, neg=giù)
- *   reset_view    — pugno (FIST)
- *   zoom_in       — V con dita (PEACE)
- *   zoom_out      — cerchio pollice-indice (OK)
+ *   drag_left     — posa DRAG (pollice+indice + 3 dita chiuse) + mov. sx
+ *   drag_right    — posa DRAG + mov. dx
+ *   drag_up       — posa DRAG + mov. in alto
+ *   drag_down     — posa DRAG + mov. in basso
+ *   back          — "il 2": pollice + indice estesi, medio/anulare/mignolo
+ *                   ripiegati nel palmo (one-shot)
  *
  * FORMATO MESSAGGIO RAW dal server:
- *   { "type": "gesture", "gesture": "<nome>", "value": <float>, "timestamp": <float> }
+ *   { "type": "gesture", "gesture": "<nome>", "timestamp": <float> }
  */
 
 export class GestureClient {
@@ -46,7 +48,7 @@ export class GestureClient {
    */
   constructor(opts = {}) {
     this._host           = opts.host           ?? 'localhost';
-    this._port           = opts.port           ?? 8765;
+    this._port           = opts.port           ?? 8766;
     this._reconnectDelay = opts.reconnectDelay ?? 3000;
     this._maxRetries     = opts.maxRetries     ?? Infinity;
     this._debug          = opts.debug          ?? false;

@@ -1,5 +1,7 @@
 ---
 import '../styles/global.css';
+import GestureHUD from '../components/GestureHUD.jsx';
+import GlobalNavGestures from '../components/GlobalNavGestures.jsx';
 
 interface Props {
 	title: string;
@@ -20,6 +22,8 @@ const { title, currentPage } = Astro.props;
 		<title>{title}</title>
 	</head>
 	<body>
+        <GestureHUD client:load />
+        <GlobalNavGestures client:load />
         <header class="header">
             <div class="logo">
                 OAK-ULUS <span>| {currentPage}</span>
