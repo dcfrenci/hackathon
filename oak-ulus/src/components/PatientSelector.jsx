@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 
 const patients = [
-  { id: '8842-XJ', name: 'Mario Rossi', dept: 'CARDIOLOGY', status: 'READY FOR PREP', time: '08:30 AM' },
-  { id: '9102-LK', name: 'Anna Bianchi', dept: 'ORTHOPEDICS', status: 'STAGING', time: '09:45 AM' },
-  { id: '7721-OP', name: 'Luca Moretti', dept: 'NEUROSURGERY', status: 'STAGING', time: '11:15 AM' },
+  { id: '8842-XJ', name: 'Mario Rossi', dept: 'CARDIOLOGY', status: 'READY FOR PREP', time: '08:30 AM', image: '/profiles/mario.png' },
+  { id: '9102-LK', name: 'Anna Bianchi', dept: 'ORTHOPEDICS', status: 'STAGING', time: '09:45 AM', image: '/profiles/anna.png' },
+  { id: '7721-OP', name: 'Luca Moretti', dept: 'NEUROSURGERY', status: 'STAGING', time: '11:15 AM', image: '/profiles/luca.png' },
 ];
 
 export default function PatientSelector() {
@@ -70,8 +70,20 @@ export default function PatientSelector() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '50%', color: index === selectedIndex ? 'var(--primary)' : 'inherit' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <div style={{ 
+                width: '64px', 
+                height: '64px', 
+                borderRadius: '50%', 
+                overflow: 'hidden', 
+                border: index === selectedIndex ? '2px solid var(--primary)' : '2px solid rgba(255,255,255,0.1)',
+                boxShadow: index === selectedIndex ? '0 0 15px var(--primary)' : 'none',
+                transition: 'all 0.3s ease'
+              }}>
+                <img 
+                  src={p.image} 
+                  alt={p.name} 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                />
               </div>
               <div>
                 <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#fff' }}>{p.name}</div>
