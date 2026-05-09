@@ -1,0 +1,257 @@
+:root {
+  --background: #0f0f11;
+  --surface: #1a1a1c;
+  --surface-container: #242426;
+  --surface-active: rgba(41, 98, 255, 0.15); /* Tinted with deep blue */
+  --on-surface: #f5f5f7;
+  --on-surface-variant: #8e8e93;
+  --primary: #2962ff; /* Deep Professional Blue */
+  --secondary: #5e5ce6;
+  --outline: rgba(255, 255, 255, 0.1);
+  --font-main: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Roboto Mono', monospace;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--background);
+  color: var(--on-surface);
+  font-family: var(--font-main);
+  overflow-x: hidden;
+}
+
+/* Common Layout */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+/* SURG-OS Header */
+.header {
+  height: 60px;
+  border-bottom: 1px solid var(--outline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--background);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-size: 1.2rem;
+}
+
+.logo span {
+  font-weight: 300;
+  color: var(--on-surface-variant);
+  margin-left: 10px;
+  font-size: 0.9rem;
+}
+
+/* Cards & Lists */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.patient-card, .scan-card {
+  background: var(--surface-container);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.patient-card:hover, .scan-card:hover {
+  background: var(--surface-active);
+  border-color: var(--outline);
+}
+
+.patient-card.active {
+  background: #232a35;
+  border-color: var(--primary);
+}
+
+/* Typography */
+.label-small {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--on-surface-variant);
+  font-weight: 600;
+}
+
+.data-value {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+/* Buttons HUD style */
+.hud-btn {
+  background: rgba(44, 44, 46, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  padding: 24px 64px; /* Significantly larger */
+  color: var(--on-surface);
+  font-size: 1.2rem; /* Larger text */
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.hud-btn:active {
+  transform: scale(0.95);
+  background: var(--surface-active);
+  box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+  border-color: var(--primary);
+}
+
+.hud-btn.active-primary {
+  background: var(--surface-active);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+
+/* Feedback Animations */
+@keyframes float-up {
+  0% { transform: translateY(40px) scale(0.8); opacity: 0; }
+  50% { transform: translateY(0) scale(1.2); opacity: 0.9; }
+  100% { transform: translateY(-40px) scale(1); opacity: 0; }
+}
+
+@keyframes float-down {
+  0% { transform: translateY(-40px) scale(0.8); opacity: 0; }
+  50% { transform: translateY(0) scale(1.2); opacity: 0.9; }
+  100% { transform: translateY(40px) scale(1); opacity: 0; }
+}
+
+@keyframes ripple-ping {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.feedback-indicator-local {
+  pointer-events: none;
+  z-index: 1000;
+  color: var(--primary);
+  position: absolute;
+}
+
+.ripple-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  opacity: 0;
+}
+
+.animate-ripple-btn { animation: ripple-btn 0.4s ease-out; }
+
+@keyframes water-ripple {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0.8; border-width: 4px; }
+  100% { transform: translate(-50%, -50%) scale(4); opacity: 0; border-width: 1px; }
+}
+
+.ripple-pond {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1001;
+}
+
+.animate-pond { animation: water-ripple 0.6s cubic-bezier(0, 0, 0.2, 1) forwards; }
+
+@keyframes selection-pulse {
+  0% { border-color: var(--primary); box-shadow: 0 0 0 0 rgba(41, 98, 255, 0.4); }
+  50% { border-color: #60a5fa; box-shadow: 0 0 15px 2px rgba(41, 98, 255, 0.2); }
+  100% { border-color: var(--primary); box-shadow: 0 0 0 0 rgba(41, 98, 255, 0.4); }
+}
+
+@keyframes card-appear {
+  0% { transform: scale(0.98); opacity: 0.9; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.active-selection-anim {
+  animation: selection-pulse 2s infinite ease-in-out, card-appear 0.3s ease-out forwards;
+}
+
+.animate-float-up { animation: float-up 0.4s ease-out forwards; }
+.animate-float-down { animation: float-down 0.4s ease-out forwards; }
+.animate-ripple { animation: ripple-ping 0.4s ease-out forwards; }
+
+.card-transition-up { transform: translateY(-10px); transition: transform 0.2s ease-out; }
+.card-transition-down { transform: translateY(10px); transition: transform 0.2s ease-out; }
+
+/* Glassmorphism Classes */
+.glass-panel {
+  background: rgba(18, 18, 20, 0.7); /* Charcoal with transparency */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--secondary-container); /* Cyber Blue */
+  border-radius: 0.25rem;
+}
+
+.glass-panel.active {
+  box-shadow: 0 0 15px var(--primary-container); /* Glowing Cyan */
+  border-color: var(--primary-container);
+}
+
+.glass-card {
+  background: rgba(18, 18, 20, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 0.25rem;
+  border: 1px solid var(--outline-variant);
+  /* Optional: white noise texture base64 could be added here */
+}
+
+/* Typography Classes */
+.display-hud { font-family: 'Inter', sans-serif; font-size: 48px; font-weight: 700; line-height: 56px; letter-spacing: -0.02em; }
+.headline-lg { font-family: 'Inter', sans-serif; font-size: 32px; font-weight: 600; line-height: 40px; }
+.headline-md { font-family: 'Inter', sans-serif; font-size: 24px; font-weight: 600; line-height: 32px; }
+.data-lg { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 500; line-height: 36px; }
+.data-md { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 500; line-height: 24px; }
+.body-lg { font-family: 'Inter', sans-serif; font-size: 18px; font-weight: 400; line-height: 28px; }
+.label-caps { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; line-height: 16px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* Utilities */
+.text-primary { color: var(--primary-container); }
+.text-secondary { color: var(--secondary-container); }
+.text-tertiary { color: var(--tertiary-container); } /* Medical Green */
+.text-error { color: var(--error); }
+.text-muted { color: var(--on-surface-variant); }

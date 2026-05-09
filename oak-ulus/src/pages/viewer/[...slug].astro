@@ -1,0 +1,30 @@
+---
+// Restoring catch-all route for dev server stability
+import Layout from '../../layouts/Layout.astro';
+import Surgical3DView from '../../components/Surgical3DView.jsx';
+
+export function getStaticPaths() {
+  const ids = ['8842-XJ', '9102-LK', '7721-OP', '3349-QC'];
+  const scans = ['cardiac-3d', 'lvot-aneurysm-3d', 'cranial-3d', 'thorax-x-ray', 'cranial-mri'];
+  
+  const paths = [];
+  ids.forEach(id => {
+    scans.forEach(scan => {
+      paths.push({
+        params: { slug: `${id}/${scan}` },
+        props: { id, scan }
+      });
+    });
+  });
+  
+  return paths;
+}
+
+const { id, scan } = Astro.props;
+---
+
+<Layout title={`OAK-ULUS | ${scan.toUpperCase()}`} currentPage={scan.toUpperCase().replace('-', ' ')}>
+	<main style="width: 100vw; height: calc(100vh - 60px); background: #0f0f11;">
+		<Surgical3DView client:only="react" />
+	</main>
+</Layout>
