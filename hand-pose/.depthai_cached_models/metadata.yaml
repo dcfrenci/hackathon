@@ -1,0 +1,16 @@
+mediapipe_palm_detection.RVC4.yaml:
+  hash: 28d8a1dfc3b90e4f713724e24d5857bc
+  model_id: aim_MxBZyneR4Tspn7m952fwyk
+  model_version_id: aimv_LXsCt2fZBfrWvDyHg4HCnk
+  model_instance_id: aimi_DFW8FN2RJmgkB5im9C8QZF
+  downloaded_files:
+    - palm_detection.rvc4.tar.xz
+  folder_name: a6872f1d9188661c2e578b8d97defc6f0bb9493c
+mediapipe_hand_landmarker.RVC4.yaml:
+  hash: aaec061ee8072fde42c8f1b217aac99d
+  model_id: aim_RzL7sdeEnsZ9Kbi1XDbXqb
+  model_version_id: aimv_DaeqYh8rBoNMq83kK9niVT
+  model_instance_id: aimi_82PPZGwSZiN7TDPtfgMZMf
+  downloaded_files:
+    - hand_landmark.rvc4.tar.xz
+  folder_name: db027da0648ab5ef1138cfef2dcba58e805df9bc
