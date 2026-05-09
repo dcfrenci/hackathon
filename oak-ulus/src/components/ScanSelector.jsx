@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 const scans = [
   { type: '3D RENDER', title: 'CARDIAC 3D', source: 'MRI-S4 · 12.04.2024', img: '/assets/cardiac.png', slug: 'cardiac-3d' },
   { type: '3D RENDER', title: 'LVOT Aneurysm 3D', source: 'DR-SCAN-2 · 11.04.2024', img: '/assets/thorax.png', slug: 'lvot-aneurysm-3d' },
+  { type: 'X-RAY SEQUENCE', title: 'THORAX DYNAMIC', source: 'SEQ-1 · 12.04.2024', img: '/assets/xrays.png', slug: 'thorax-x-ray' },
   { type: '3D RENDER', title: 'CRANIAL 3D', source: 'SCAN-UNIT-B · 12.04.2024', img: '/assets/cranial.png', slug: 'cranial-3d' },
 ];
 
@@ -26,15 +27,23 @@ export default function ScanSelector() {
   const handleSelect = () => {
     triggerFeedback('select');
     setTimeout(() => {
-      // Use the explicit slug for 100% reliability
-      const patientId = '8842-XJ';
+      // Extract patientId from URL (e.g., /patient/8842-XJ/)
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const patientId = pathParts[pathParts.length - 1] || '8842-XJ';
       window.location.href = `/viewer/${patientId}/${scans[selectedIndex].slug}/`;
     }, 450);
   };
 
   return (
-    <main className="container" style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '40px', alignItems: 'start', position: 'relative' }}>
-      <div style={{ position: 'relative' }}>
+    <main className="container">
+      <div style={{ marginBottom: '24px' }}>
+        <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', textDecoration: 'none', fontWeight: 'bold', transition: 'opacity 0.2s' }} onMouseOver={(e) => e.currentTarget.style.opacity='0.7'} onMouseOut={(e) => e.currentTarget.style.opacity='1'}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          BACK TO PATIENCE LIST
+        </a>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '40px', alignItems: 'start', position: 'relative' }}>
+        <div style={{ position: 'relative' }}>
         {/* Directional Feedback Aligned to List */}
         {feedback === 'up' && (
           <div className="feedback-indicator-local animate-float-up" style={{ left: '-120px', top: '10%' }}>
@@ -47,36 +56,61 @@ export default function ScanSelector() {
           </div>
         )}
 
-        <div className="card-list">
-          {scans.map((s, index) => (
-            <div
-              key={s.title}
-              className={`scan-card ${index === selectedIndex ? 'active-selection-anim' : ''}`}
-              onClick={() => setSelectedIndex(index)}
-              style={{
-                display: 'flex',
-                gap: '0',
-                padding: 0,
-                overflow: 'hidden',
-                alignItems: 'stretch',
-                height: '140px',
-                background: '#121212',
-                borderRadius: '16px',
-                border: index === selectedIndex ? '2px solid var(--primary)' : '1px solid #333',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{ width: '160px', height: '100%', overflow: 'hidden', background: '#000' }}>
-                <img src={s.img} alt={s.title} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: index === selectedIndex ? 1 : 0.4, transition: 'opacity 0.3s' }} />
-              </div>
-              <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="label-small" style={{ marginBottom: '4px', color: index === selectedIndex ? 'var(--primary)' : 'var(--on-surface-variant)' }}>{s.type}</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>{s.title}</div>
-                <div className="data-value" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>{s.source}</div>
-              </div>
-            </div>
-          ))}
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
+          {/* Vertical Progress Bar */}
+          <div style={{ width: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', position: 'relative', overflow: 'hidden', height: '460px' }}>
+            <div style={{
+              position: 'absolute',
+              top: `${(Math.max(0, Math.min(selectedIndex - 1, scans.length - 3)) / scans.length) * 100}%`,
+              height: `${(3 / scans.length) * 100}%`,
+              width: '100%',
+              background: 'var(--primary)',
+              borderRadius: '3px',
+              boxShadow: '0 0 15px var(--primary)',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}></div>
+          </div>
+
+          <div className="card-list" style={{ flex: 1 }}>
+            {(() => {
+              const start = Math.max(0, Math.min(selectedIndex - 1, scans.length - 3));
+              return scans.slice(start, start + 3).map((s, sliceIndex) => {
+                const actualIndex = start + sliceIndex;
+                const typeColor = s.type === '3D RENDER' ? '#FF9800' : (s.type === 'X-RAY SEQUENCE' ? '#4CAF50' : 'var(--primary)');
+
+                return (
+                  <div
+                    key={s.title}
+                    className={`scan-card ${actualIndex === selectedIndex ? 'active-selection-anim' : ''}`}
+                    onClick={() => setSelectedIndex(actualIndex)}
+                    style={{
+                      display: 'flex',
+                      gap: '0',
+                      padding: 0,
+                      overflow: 'hidden',
+                      alignItems: 'stretch',
+                      height: '140px',
+                      background: '#121212',
+                      borderRadius: '16px',
+                      border: actualIndex === selectedIndex ? `2px solid ${typeColor}` : '1px solid #333',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      marginBottom: sliceIndex < 2 ? '20px' : 0
+                    }}
+                  >
+                    <div style={{ width: '160px', height: '100%', overflow: 'hidden', background: '#000' }}>
+                      <img src={s.img} alt={s.title} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: actualIndex === selectedIndex ? 1 : 0.4, transition: 'opacity 0.3s' }} />
+                    </div>
+                    <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <div className="label-small" style={{ marginBottom: '4px', color: typeColor, fontWeight: 'bold', letterSpacing: '1px' }}>{s.type}</div>
+                      <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>{s.title}</div>
+                      <div className="data-value" style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>{s.source}</div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
         </div>
 
         <div style={{ marginTop: '60px', display: 'flex', justifyContent: 'center', gap: '16px', width: 'fit-content', marginLeft: 'auto', marginRight: 'auto' }}>
@@ -120,6 +154,7 @@ export default function ScanSelector() {
           </div>
         </div>
       </aside>
+      </div>
     </main>
   );
 }

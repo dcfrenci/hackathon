@@ -90,7 +90,7 @@ const Loader = () => (
   </Html>
 );
 
-export default function Surgical3DView() {
+export default function Surgical3DView({ patientId = '8842-XJ' }) {
   const [activeTool, setActiveTool] = useState('ROTATE');
   const [zoomValue, setZoomValue] = useState(150);
   const [rotX, setRotX] = useState(45);
@@ -117,28 +117,40 @@ export default function Surgical3DView() {
   }, []);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'grid', gridTemplateColumns: '180px 1fr 340px', background: '#050507', padding: '24px', gap: '24px', boxSizing: 'border-box' }}>
-      {/* Left Navigation HUD */}
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '20px', padding: '24px', background: 'rgba(255,255,255,0.02)', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
-        <button className="hud-btn" style={{ width: '140px', height: '110px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="120" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 14l8-8 8 8" /><path d="M4 21l8-8 8 8" /></svg>
-        </button>
+    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'grid', gridTemplateColumns: '200px 1fr 340px', background: '#050507', padding: '24px', gap: '24px', boxSizing: 'border-box' }}>
+      {/* Left Sidebar */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', zIndex: 10 }}>
+        
+        {/* Back Button - Outside the container */}
+        <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+          <a href={`/patient/${patientId}/`} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', textDecoration: 'none', fontWeight: 'bold', transition: 'opacity 0.2s' }} onMouseOver={(e) => e.currentTarget.style.opacity='0.7'} onMouseOut={(e) => e.currentTarget.style.opacity='1'}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            BACK
+          </a>
+        </div>
 
-        {[
-          { label: 'ROTATE', icon: 'M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8m0-5v5h-5' },
-          { label: 'ZOOM', icon: 'M15 15l6 6m-11-4a7 7 0 1 1 0-14 7 7 0 0 1 0 14zM8 10h4m-2-2v4' }
-        ].map((btn) => (
-          <div key={btn.label} className={activeTool === btn.label ? 'active-selection-anim' : ''} style={{ borderRadius: '16px' }}>
-            <button className={`hud-btn ${activeTool === btn.label ? 'active-primary' : ''}`} onClick={() => setActiveTool(btn.label)} style={{ width: '140px', height: '140px', flexDirection: 'column', padding: '0', justifyContent: 'center', position: 'relative', borderRadius: '16px' }}>
-              <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginBottom: '12px' }}><path d={btn.icon} /></svg>
-              <span style={{ fontSize: '13px', fontWeight: '800', letterSpacing: '0.1em' }}>{btn.label}</span>
-            </button>
-          </div>
-        ))}
+        {/* Tools HUD Container */}
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '20px', padding: '24px', background: 'rgba(255,255,255,0.02)', borderRadius: '40px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <button className="hud-btn" style={{ width: '140px', height: '110px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="120" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 14l8-8 8 8" /><path d="M4 21l8-8 8 8" /></svg>
+          </button>
 
-        <button className="hud-btn" style={{ width: '140px', height: '110px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="120" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 10l8 8 8-8" /><path d="M4 3l8 8 8-8" /></svg>
-        </button>
+          {[
+            { label: 'ROTATE', icon: 'M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8m0-5v5h-5' },
+            { label: 'ZOOM', icon: 'M15 15l6 6m-11-4a7 7 0 1 1 0-14 7 7 0 0 1 0 14zM8 10h4m-2-2v4' }
+          ].map((btn) => (
+            <div key={btn.label} className={activeTool === btn.label ? 'active-selection-anim' : ''} style={{ borderRadius: '16px' }}>
+              <button className={`hud-btn ${activeTool === btn.label ? 'active-primary' : ''}`} onClick={() => setActiveTool(btn.label)} style={{ width: '140px', height: '140px', flexDirection: 'column', padding: '0', justifyContent: 'center', position: 'relative', borderRadius: '16px' }}>
+                <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginBottom: '12px' }}><path d={btn.icon} /></svg>
+                <span style={{ fontSize: '13px', fontWeight: '800', letterSpacing: '0.1em' }}>{btn.label}</span>
+              </button>
+            </div>
+          ))}
+
+          <button className="hud-btn" style={{ width: '140px', height: '110px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="120" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 10l8 8 8-8" /><path d="M4 3l8 8 8-8" /></svg>
+          </button>
+        </div>
       </div>
 
       <div style={{ position: 'relative', height: '100%', overflow: 'hidden', borderRadius: '40px', background: '#d1d1d1', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)' }}>
