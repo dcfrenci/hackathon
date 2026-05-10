@@ -135,9 +135,8 @@ export default function XrayCarousel({ patientId = "patient_1" }) {
                 alt={`Xray slice ${index + 1}`}
                 style={{
                   position: 'absolute',
-                  height: '95%',
+                  maxHeight: '95%',
                   maxWidth: '75%',
-                  objectFit: 'contain',
                   borderRadius: '24px',
                   boxShadow: offset === 0 ? '0 40px 80px rgba(0,0,0,0.9)' : '0 15px 35px rgba(0,0,0,0.6)',
                   transform: `translateX(${translateX}%) scale(${scale}) rotateY(${rotateY}deg)`,
