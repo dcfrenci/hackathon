@@ -1,2 +1,5 @@
 .venv/
 .DS_Store
+
+hand-pose/__pycache__/
+hand-pose/.depthai_cache_models/
