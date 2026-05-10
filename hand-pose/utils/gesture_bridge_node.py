@@ -25,6 +25,7 @@ Formato evento JSON:
 
 import threading
 import time
+from collections import deque
 from typing import Optional
 
 import depthai as dai
@@ -45,6 +46,15 @@ _DEFAULT_HANDEDNESS = "right"
 # della depth: la mediana dei valori non-zero in questa finestra è più
 # robusta del singolo pixel centrale a fori/rumore della depth map.
 _DEPTH_SAMPLE_HALF = 4  # → finestra 9x9
+
+# Smoothing temporale della depth della mano dominante: teniamo gli ultimi
+# N campioni e usiamo la mediana per decidere lo stato. Senza questo, la
+# stereo neural-depth produce picchi (sfondo invece del palmo) che fanno
+# alternare too_close/too_far frame per frame quando la mano è lontana.
+_DEPTH_HISTORY_LEN = 7
+# Frame consecutivi richiesti prima di committare un nuovo stato distanza
+# (debounce): evita brevi flicker visibili nell'UI.
+_DEPTH_STATUS_DEBOUNCE = 4
 
 
 def _label_from_prediction(pred: float) -> str:
@@ -99,6 +109,18 @@ class GestureBridgeNode(dai.node.HostNode):
         self._dominant_hand = _DEFAULT_HANDEDNESS
         self._dominant_lock = threading.Lock()
 
+        # Ultimo stato distanza inviato alla web app (too_far/too_close/ok).
+        # Emettiamo solo on-change per non spammare la WS ad ogni frame.
+        self._last_depth_status: Optional[str] = None
+        # Storia mobile dei sample di depth della mano dominante: la mediana
+        # su questa finestra è il valore "vero" usato per la classificazione,
+        # robusta ai picchi della stereo neural-depth (che altrimenti fanno
+        # alternare too_close/too_far frame per frame).
+        self._depth_history: deque = deque(maxlen=_DEPTH_HISTORY_LEN)
+        # Stato candidato in attesa di conferma (debounce N frame consecutivi).
+        self._pending_depth_status: Optional[str] = None
+        self._pending_depth_count: int = 0
+
         # Avvia il server WebSocket (idempotente).
         # NB: porta 8766 — la 8765 è già usata internamente da DepthAI v3.
         websocket_server.start(host="0.0.0.0", port=8766)
@@ -148,6 +170,13 @@ class GestureBridgeNode(dai.node.HostNode):
         # Loop completo (no break al primo confidence ok) così la dominante
         # viene processata anche se non è la prima detection.
         processed_any = False
+        # Stato distanza per *questo* frame: la prima dominante con depth
+        # valida lo determina. "ok" vince su too_far/too_close (se almeno
+        # una mano è nel range non vogliamo allarmare). Quando nessuna mano
+        # dominante è in frame (current_depth_status resta None) lo
+        # interpretiamo come "ok" → l'alert si nasconde.
+        current_depth_status: Optional[str] = None
+        current_depth_mm: Optional[int] = None
         for ix, detection in enumerate(detections):
             keypoints_msg: Keypoints = gathered_data.items[ix]["0"]
             confidence_msg: Predictions = gathered_data.items[ix]["1"]
@@ -174,8 +203,21 @@ class GestureBridgeNode(dai.node.HostNode):
                 )
                 if depth_mm is None:
                     continue
-                if not (self._depth_min_mm <= depth_mm <= self._depth_max_mm):
+                if depth_mm < self._depth_min_mm:
+                    # Registra l'allarme solo se non abbiamo già visto una
+                    # mano nel range (current_depth_status != "ok").
+                    if current_depth_status != "ok":
+                        current_depth_status = "too_close"
+                        current_depth_mm = depth_mm
                     continue
+                if depth_mm > self._depth_max_mm:
+                    if current_depth_status != "ok":
+                        current_depth_status = "too_far"
+                        current_depth_mm = depth_mm
+                    continue
+                # In range → "ok" sovrascrive eventuale alert precedente.
+                current_depth_status = "ok"
+                current_depth_mm = depth_mm
 
             # Remap dei 21 landmark dalle coords del crop a quelle del frame intero
             # (stesso calcolo di AnnotationNode.process)
@@ -223,6 +265,68 @@ class GestureBridgeNode(dai.node.HostNode):
         # dominante esce dal frame ma quella non-dominante è ancora visibile).
         if not processed_any:
             self._tracker.reset()
+
+        # Notifica alla web app il cambio di stato distanza, con smoothing
+        # temporale (mediana sugli ultimi N campioni) + debounce (N frame
+        # consecutivi nel nuovo stato) per evitare flicker.
+        if self._depth_filter_enabled:
+            self._update_depth_status(current_depth_mm)
+
+    # ── Depth status: smoothing + debounce + WS notify ──────────────────────
+
+    def _update_depth_status(self, sampled_depth_mm: Optional[int]) -> None:
+        """Aggiorna la storia depth, calcola lo stato smoothed (mediana) e
+        notifica la web app solo se il nuovo stato è stabile per
+        _DEPTH_STATUS_DEBOUNCE frame consecutivi."""
+        if sampled_depth_mm is not None:
+            self._depth_history.append(int(sampled_depth_mm))
+        elif self._depth_history:
+            # Decadimento graduale: invece di azzerare la storia quando la
+            # mano sparisce per un frame (movimento veloce, palm detect miss),
+            # rimuoviamo un solo campione vecchio. Così piccoli buchi non
+            # resettano la stima.
+            self._depth_history.popleft()
+
+        if not self._depth_history:
+            candidate = "ok"
+            smoothed: Optional[int] = None
+        else:
+            smoothed = int(np.median(self._depth_history))
+            if smoothed < self._depth_min_mm:
+                candidate = "too_close"
+            elif smoothed > self._depth_max_mm:
+                candidate = "too_far"
+            else:
+                candidate = "ok"
+
+        # Già nello stato corrente: niente da fare, azzera il pending.
+        if candidate == self._last_depth_status:
+            self._pending_depth_status = None
+            self._pending_depth_count = 0
+            return
+
+        # Conta i frame consecutivi nel nuovo candidato.
+        if candidate == self._pending_depth_status:
+            self._pending_depth_count += 1
+        else:
+            self._pending_depth_status = candidate
+            self._pending_depth_count = 1
+
+        if self._pending_depth_count < _DEPTH_STATUS_DEBOUNCE:
+            return
+
+        # Commit: il nuovo stato è stabile.
+        self._last_depth_status = candidate
+        self._pending_depth_status = None
+        self._pending_depth_count = 0
+        websocket_server.send_event({
+            "type": "depth_status",
+            "status": candidate,
+            "depth_mm": smoothed,
+            "min_mm": self._depth_min_mm,
+            "max_mm": self._depth_max_mm,
+            "timestamp": time.time(),
+        })
 
     # ── Depth helpers ───────────────────────────────────────────────────────
 

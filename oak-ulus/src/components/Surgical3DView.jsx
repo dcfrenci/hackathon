@@ -54,25 +54,44 @@ const STLModel = ({ url, onLoaded }) => {
   );
 };
 
-const CameraController = ({ zoomValue, rotX, rotY }) => {
-  const { camera } = useThree();
-  useFrame(() => {
-    const zoomRatio = zoomValue / 1000;
-    // Wider range: 50m back to 0.001m in
-    const distance = 50 * Math.pow(1 - zoomRatio, 4) + 0.001;
+// Per impulso, la rotazione totale integrata = IMPULSE / (1 - DAMPING_60).
+// Con DAMPING_60 = 0.82 → impulso 1.8 dà ~10°, impulso 0.9 dà ~5° (parità con la
+// versione pre-momentum). Cambiando DAMPING_60 ricalibrare di conseguenza.
+const IMPULSE_YAW   = 1.8;
+const IMPULSE_PITCH = 0.9;
+const DAMPING_60    = 0.82; // riferito a 60 fps; normalizzato per delta sotto
 
+const CameraController = ({ zoomValue, rotXRef, rotYRef, rotVelXRef, rotVelYRef, onAnglesChange }) => {
+  const { camera } = useThree();
+  const lastPublishRef = useRef(0);
+  useFrame((_, delta) => {
+    // Damping frame-rate independent: equivalente a DAMPING_60 per frame a 60Hz.
+    const k = Math.pow(DAMPING_60, delta * 60);
+    rotVelXRef.current *= k;
+    rotVelYRef.current *= k;
+    rotXRef.current = (rotXRef.current + rotVelXRef.current + 360) % 360;
+    rotYRef.current = Math.max(-85, Math.min(85, rotYRef.current + rotVelYRef.current));
+
+    // Throttle del re-render: aggiorna lo stato React ~10 Hz per slider/label.
+    lastPublishRef.current += delta;
+    if (onAnglesChange && lastPublishRef.current >= 0.1) {
+      lastPublishRef.current = 0;
+      onAnglesChange(Math.round(rotXRef.current), Math.round(rotYRef.current));
+    }
+
+    const zoomRatio = zoomValue / 1000;
+    const distance = 50 * Math.pow(1 - zoomRatio, 4) + 0.001;
     camera.fov = 45 - (zoomRatio * 35);
     camera.updateProjectionMatrix();
 
-    const theta = (rotX * Math.PI) / 180;
-    const clampedRotY = Math.max(-85, Math.min(85, rotY));
-    const phi = ((90 - clampedRotY) * Math.PI) / 180;
+    const theta = (rotXRef.current * Math.PI) / 180;
+    const phi = ((90 - rotYRef.current) * Math.PI) / 180;
 
-    const targetX = distance * Math.sin(phi) * Math.sin(theta);
-    const targetY = distance * Math.cos(phi);
-    const targetZ = distance * Math.sin(phi) * Math.cos(theta);
-
-    camera.position.lerp(new THREE.Vector3(targetX, targetY, targetZ), 0.15);
+    camera.position.set(
+      distance * Math.sin(phi) * Math.sin(theta),
+      distance * Math.cos(phi),
+      distance * Math.sin(phi) * Math.cos(theta),
+    );
     camera.lookAt(0, 0, 0);
   });
   return null;
@@ -99,17 +118,33 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
   const [stlPath, setStlPath] = useState('');
   const [scanTitle, setScanTitle] = useState('ANATOMICAL MODEL');
 
+  const rotXRef    = useRef(45);
+  const rotYRef    = useRef(30);
+  const rotVelXRef = useRef(0);
+  const rotVelYRef = useRef(0);
+
+  const handleSliderRotX = (v) => {
+    rotXRef.current    = v;
+    rotVelXRef.current = 0;
+    setRotX(v);
+  };
+  const handleSliderRotY = (v) => {
+    rotYRef.current    = v;
+    rotVelYRef.current = 0;
+    setRotY(v);
+  };
+
   useGesture({
     click: () => setActiveTool((t) => (t === 'ROTATE' ? 'ZOOM' : 'ROTATE')),
-    drag_left: () => setRotX((x) => (x - 10 + 360) % 360),
-    drag_right: () => setRotX((x) => (x + 10) % 360),
+    drag_left:  () => { rotVelXRef.current -= IMPULSE_YAW; },
+    drag_right: () => { rotVelXRef.current += IMPULSE_YAW; },
     drag_up: () => {
       if (activeTool === 'ZOOM') setZoomValue((v) => Math.min(v + 50, 1000));
-      else setRotY((y) => Math.min(y + 5, 85));
+      else rotVelYRef.current += IMPULSE_PITCH;
     },
     drag_down: () => {
       if (activeTool === 'ZOOM') setZoomValue((v) => Math.max(v - 50, 0));
-      else setRotY((y) => Math.max(y - 5, -85));
+      else rotVelYRef.current -= IMPULSE_PITCH;
     },
   }, [activeTool]);
 
@@ -197,18 +232,18 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
             {stlPath && <STLModel url={stlPath} />}
           </Suspense>
 
-          <CameraController zoomValue={zoomValue} rotX={rotX} rotY={rotY} />
+          <CameraController zoomValue={zoomValue} rotXRef={rotXRef} rotYRef={rotYRef} rotVelXRef={rotVelXRef} rotVelYRef={rotVelYRef} onAnglesChange={(x, y) => { setRotX(x); setRotY(y); }} />
         </Canvas>
 
         {activeTool === 'ROTATE' && (
           <>
             <div className="glass-panel" style={{ position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)', width: '40%', padding: '12px 24px', borderRadius: '20px', border: '1px solid var(--primary)', background: 'rgba(15, 15, 17, 0.95)', zIndex: 100 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--primary)', fontWeight: 'bold' }}><span>YAW</span><span>{rotX}°</span></div>
-              <input type="range" min="0" max="360" value={rotX} onChange={(e) => setRotX(parseInt(e.target.value))} style={{ width: '100%', accentColor: 'var(--primary)' }} />
+              <input type="range" min="0" max="360" value={rotX} onChange={(e) => handleSliderRotX(parseInt(e.target.value))} style={{ width: '100%', accentColor: 'var(--primary)' }} />
             </div>
             <div className="glass-panel" style={{ position: 'absolute', right: '40px', top: '50%', transform: 'translateY(-50%)', height: '60%', width: '50px', padding: '20px 10px', borderRadius: '24px', border: '1px solid var(--primary)', background: 'rgba(15, 15, 17, 0.95)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: '10px', color: 'var(--primary)', fontWeight: 'bold' }}>PITCH</div>
-              <input type="range" min="-85" max="85" value={rotY} onChange={(e) => setRotY(parseInt(e.target.value))} style={{ appearance: 'slider-vertical', width: '8px', height: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }} />
+              <input type="range" min="-85" max="85" value={rotY} onChange={(e) => handleSliderRotY(parseInt(e.target.value))} style={{ appearance: 'slider-vertical', width: '8px', height: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }} />
               <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '10px' }}>{rotY}°</div>
             </div>
           </>

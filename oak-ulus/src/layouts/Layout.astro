@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import GestureHUD from '../components/GestureHUD.jsx';
 import GlobalNavGestures from '../components/GlobalNavGestures.jsx';
+import DepthAlert from '../components/DepthAlert.jsx';
 
 interface Props {
 	title: string;
@@ -26,6 +27,7 @@ const { title, currentPage, disableGestures = false } = Astro.props;
 	</head>
 	<body>
         <GestureHUD client:load />
+        <DepthAlert client:load />
         {!disableGestures && <GlobalNavGestures client:load />}
         <header class="header">
             <div class="logo">

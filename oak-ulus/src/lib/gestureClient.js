@@ -43,6 +43,10 @@ class GestureClient {
 
     this._listeners = new Map();
     this._statusListeners = new Map();
+    this._depthListeners = new Set();
+    /** Ultimo depth_status ricevuto: subito disponibile per nuovi listener
+     *  che si registrano dopo il messaggio (es. component remount). */
+    this._lastDepthStatus = null;
 
     this._ws           = null;
     this._retries      = 0;
@@ -90,6 +94,30 @@ class GestureClient {
     return this;
   }
 
+  /**
+   * Registra un handler per gli eventi `depth_status` inviati dal backend
+   * (mano dominante troppo vicina/lontana rispetto al range chirurgico
+   * configurato in main.py). Il callback riceve l'intero messaggio:
+   *   { type: 'depth_status', status: 'too_far'|'too_close'|'ok',
+   *     depth_mm: number|null, min_mm: number, max_mm: number, timestamp: number }
+   * Il backend emette solo on-change, ma se un evento è già stato ricevuto
+   * il listener viene invocato subito con l'ultimo valore noto (così un
+   * componente che monta dopo l'evento mostra subito lo stato corrente).
+   */
+  onDepthStatus(callback) {
+    this._depthListeners.add(callback);
+    if (this._lastDepthStatus) {
+      try { callback(this._lastDepthStatus); }
+      catch (err) { console.error('[GestureClient] onDepthStatus replay error:', err); }
+    }
+    return this;
+  }
+
+  offDepthStatus(callback) {
+    this._depthListeners.delete(callback);
+    return this;
+  }
+
   destroy() {
     this._destroyed = true;
     if (this._retryTimeout) {
@@ -102,6 +130,7 @@ class GestureClient {
     }
     this._listeners.clear();
     this._statusListeners.clear();
+    this._depthListeners.clear();
     if (this._anyListeners) this._anyListeners.clear();
   }
 
@@ -174,6 +203,15 @@ class GestureClient {
     let msg;
     try { msg = JSON.parse(raw); }
     catch { this._log('Messaggio non-JSON:', raw); return; }
+
+    if (msg.type === 'depth_status') {
+      this._lastDepthStatus = msg;
+      for (const fn of this._depthListeners) {
+        try { fn(msg); }
+        catch (err) { console.error('[GestureClient] depth_status handler:', err); }
+      }
+      return;
+    }
 
     if (msg.type !== 'gesture' || typeof msg.gesture !== 'string') {
       this._log('Messaggio sconosciuto:', msg);
