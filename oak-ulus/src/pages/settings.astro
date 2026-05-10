@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="OAK-ULUS | SETTINGS" currentPage="SYSTEM SETTINGS">
+<Layout title="OAK-ULUS | SETTINGS" currentPage="SYSTEM SETTINGS" disableGestures={true}>
 	<main class="settings-container">
 		<div class="glass-panel settings-card">
 			<h2 style="margin-bottom: 32px; font-weight: 300; letter-spacing: 0.1em;">SURGEON PREFERENCES</h2>
@@ -19,7 +19,7 @@ import Layout from '../layouts/Layout.astro';
 			</div>
 
             <div style="margin-top: 40px; display: flex; gap: 16px;">
-                <a href="/" class="action-btn secondary">BACK TO TERMINAL</a>
+                <button class="action-btn secondary" id="btn-back-terminal">BACK TO TERMINAL</button>
                 <button class="action-btn primary" id="btn-save">SAVE CHANGES</button>
             </div>
 		</div>
@@ -174,8 +174,15 @@ import Layout from '../layouts/Layout.astro';
 			getGestureClient().setHandedness(currentHand);
 			btnSave.textContent = 'SAVED!';
 			setTimeout(() => {
-				window.location.href = '/';
+				// replace() invece di href: rimuove /settings/ dalla history,
+				// così un back gesture al terminal non torna nelle impostazioni.
+				window.location.replace('/');
 			}, 500);
+		});
+
+		const btnBackTerminal = document.getElementById('btn-back-terminal');
+		btnBackTerminal?.addEventListener('click', () => {
+			window.location.replace('/');
 		});
 	}
 </script>

@@ -37,7 +37,7 @@ export default function PatientSelector() {
     swipe_left:  () => handlePrev(),
     swipe_right: () => handleNext(),
     click:       () => handleSelect(),
-  }, [selectedIndex]);
+  }, [selectedIndex], { oneShot: ['drag_up', 'drag_down'] });
 
   return (
     <div className="container" style={{ position: 'relative' }}>

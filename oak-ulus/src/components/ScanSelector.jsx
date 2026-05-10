@@ -41,7 +41,7 @@ export default function ScanSelector() {
     swipe_left:  () => handleUp(),
     swipe_right: () => handleDown(),
     click:       () => handleSelect(),
-  }, [selectedIndex]);
+  }, [selectedIndex], { oneShot: ['drag_up', 'drag_down'] });
 
   return (
     <main className="container">

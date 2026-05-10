@@ -6,9 +6,12 @@ import GlobalNavGestures from '../components/GlobalNavGestures.jsx';
 interface Props {
 	title: string;
     currentPage: string;
+    /** Quando true, le gesture di navigazione (back, ecc.) non vengono montate.
+     *  Usato per /settings/, dove tutto deve essere gestito a mano pre-operazione. */
+    disableGestures?: boolean;
 }
 
-const { title, currentPage } = Astro.props;
+const { title, currentPage, disableGestures = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -23,7 +26,7 @@ const { title, currentPage } = Astro.props;
 	</head>
 	<body>
         <GestureHUD client:load />
-        <GlobalNavGestures client:load />
+        {!disableGestures && <GlobalNavGestures client:load />}
         <header class="header">
             <div class="logo">
                 OAK-ULUS <span>| {currentPage}</span>

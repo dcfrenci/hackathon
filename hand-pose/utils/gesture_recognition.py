@@ -14,7 +14,11 @@ movimento del palmo per emettere eventi discreti consumati dal bridge node.
 
 Eventi emessi:
     CLICK         — rilascio di PINCH dopo durata/movimento accettabili
-    DRAG_*        — DRAG con spostamento sopra soglia (asse dominante)
+    DRAG_*        — DRAG con spostamento sopra soglia (asse dominante, continuo:
+                    chainabile mantenendo la posa). Il behaviour "one-shot per
+                    gesto" usato dai selettori è applicato lato consumer (vedi
+                    useGesture options.oneShot), così il 3D viewer mantiene il
+                    controllo continuo per yaw/pitch/zoom.
     SWIPE_*       — FIVE con movimento orizzontale sopra soglia
     BACK          — ingresso nella posa PEACE_H (one-shot)
 
@@ -195,14 +199,6 @@ def _thumb_index_angle(kpts: np.ndarray) -> float:
     return float(np.degrees(np.arccos(cosine)))
 
 
-def _finger_extended_y(kpts: np.ndarray, tip: int, dip: int, pip: int) -> bool:
-    """Check di estensione y-based (legacy): tip più in alto del DIP, DIP più
-    in alto del PIP. Strict: richiede mano orientata verso l'alto. Usato solo
-    per FIVE, dove vogliamo essere severi per non confondere con altre pose
-    a 3+ dita estese."""
-    return kpts[tip][1] < kpts[dip][1] < kpts[pip][1]
-
-
 # =============================================================================
 # Riconoscimento pose statiche (singolo frame)
 # =============================================================================
@@ -240,14 +236,24 @@ def _is_peace_h(kpts: np.ndarray) -> bool:
 
 
 def _is_five(kpts: np.ndarray) -> bool:
-    """FIVE: tutte le 5 dita estese. Usa il check y-based legacy (richiede
-    mano orientata verso l'alto): più severo, riduce falsi positivi con altre
-    pose a dita estese."""
+    """FIVE: tutte le 5 dita estese. Rotation-invariant come PINCH/DRAG/PEACE_H.
+
+    Storicamente questo check usava il confronto y-based (tip.y < dip.y < pip.y),
+    che però richiede la mano orientata verso l'alto: durante uno swipe laterale
+    l'utente inclina spesso la mano e l'ordinamento y si rompe per qualche frame
+    → committed esce da FIVE → l'anchor di `_five_start_pos` viene resettato a
+    metà movimento e il successivo step può far sparare lo swipe nella
+    direzione sbagliata.
+
+    Falsi positivi non aumentano: PINCH/DRAG (indice ripiegato verso il pollice)
+    e PEACE_H (medio/anulare/mignolo ripiegati) falliscono comunque
+    `_finger_extended` su almeno un dito, e hanno precedenza più alta in
+    `recognize_gesture`."""
     if not _thumb_extended(kpts):
         return False
     return all(
-        _finger_extended_y(kpts, tip, dip, pip)
-        for tip, dip, pip in _LONG_FINGERS_TDP
+        _finger_extended(kpts, tip, pip)
+        for tip, _dip, pip in _LONG_FINGERS_TDP
     )
 
 

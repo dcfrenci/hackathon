@@ -10,6 +10,10 @@
  *   drag_right    — posa DRAG + movimento dx
  *   drag_up       — posa DRAG + movimento in alto
  *   drag_down     — posa DRAG + movimento in basso
+ *
+ * Tutti i drag sono CONTINUI sul wire (eventi ripetuti mantenendo la posa).
+ * Il behaviour "uno per gesto" usato dai selettori si attiva passando
+ * `options.oneShot: ['drag_up', 'drag_down']` a useGesture, vedi useGesture.js.
  *   back          — "il 2": pollice + indice estesi, medio/anulare/mignolo
  *                   ripiegati nel palmo (one-shot)
  *
