@@ -101,7 +101,7 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
 
   useGesture({
     click: () => setActiveTool((t) => (t === 'ROTATE' ? 'ZOOM' : 'ROTATE')),
-    drag_left:  () => setRotX((x) => (x - 10 + 360) % 360),
+    drag_left: () => setRotX((x) => (x - 10 + 360) % 360),
     drag_right: () => setRotX((x) => (x + 10) % 360),
     drag_up: () => {
       if (activeTool === 'ZOOM') setZoomValue((v) => Math.min(v + 50, 1000));
@@ -135,11 +135,11 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
     <div style={{ width: '100%', height: '100%', position: 'relative', display: 'grid', gridTemplateColumns: '200px 1fr', background: '#050507', padding: '24px', gap: '24px', boxSizing: 'border-box' }}>
       {/* Left Sidebar */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', zIndex: 10 }}>
-        
+
         {/* Back Button - Outside the container */}
         <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-          <a href={`/patient/${patientId}/`} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', textDecoration: 'none', fontWeight: 'bold', transition: 'opacity 0.2s' }} onMouseOver={(e) => e.currentTarget.style.opacity='0.7'} onMouseOut={(e) => e.currentTarget.style.opacity='1'}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          <a href={`/patient/${patientId}/`} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', textDecoration: 'none', fontWeight: 'bold', transition: 'opacity 0.2s' }} onMouseOver={(e) => e.currentTarget.style.opacity = '0.7'} onMouseOut={(e) => e.currentTarget.style.opacity = '1'}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             BACK
           </a>
         </div>
@@ -147,7 +147,7 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
         {/* Tools HUD Container */}
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '20px', padding: '24px', background: 'rgba(255,255,255,0.02)', borderRadius: '40px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <button className="hud-btn" style={{ width: '140px', height: '110px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="120" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 14l8-8 8 8" /><path d="M4 21l8-8 8 8" /></svg>
+            <svg width="140" height="100" viewBox="4 6 16 15" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 14l8-8 8 8" /><path d="M4 21l8-8 8 8" /></svg>
           </button>
 
           {[
@@ -156,20 +156,20 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
           ].map((btn) => (
             <div key={btn.label} className={activeTool === btn.label ? 'active-selection-anim' : ''} style={{ borderRadius: '16px' }}>
               <button className={`hud-btn ${activeTool === btn.label ? 'active-primary' : ''}`} onClick={() => setActiveTool(btn.label)} style={{ width: '140px', height: '140px', flexDirection: 'column', padding: '0', justifyContent: 'center', position: 'relative', borderRadius: '16px' }}>
-                <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginBottom: '12px' }}><path d={btn.icon} /></svg>
+                <svg width="35" height="35" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginBottom: '12px' }}><path d={btn.icon} /></svg>
                 <span style={{ fontSize: '13px', fontWeight: '800', letterSpacing: '0.1em' }}>{btn.label}</span>
               </button>
             </div>
           ))}
 
           <button className="hud-btn" style={{ width: '140px', height: '110px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="120" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 10l8 8 8-8" /><path d="M4 3l8 8 8-8" /></svg>
+            <svg width="140" height="100" viewBox="4 3 16 15" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="4.5"><path d="M4 10l8 8 8-8" /><path d="M4 3l8 8 8-8" /></svg>
           </button>
         </div>
       </div>
 
       <div style={{ position: 'relative', height: '100%', overflow: 'hidden', borderRadius: '40px', background: '#d1d1d1', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)' }}>
-        
+
         {/* Overlaid Patient Info Block */}
         <div className="glass-panel" style={{ position: 'absolute', top: '24px', left: '24px', background: 'rgba(15, 15, 17, 0.85)', borderRadius: '16px', border: '1px solid var(--primary)', padding: '16px', zIndex: 100, backdropFilter: 'blur(10px)', minWidth: '220px', pointerEvents: 'none' }}>
           <div className="label-small" style={{ fontSize: '9px', color: '#fff', marginBottom: '8px' }}>PATIENT INFORMATION</div>
