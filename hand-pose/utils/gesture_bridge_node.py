@@ -28,6 +28,7 @@ import time
 from typing import Optional
 
 import depthai as dai
+import numpy as np
 from depthai_nodes import GatheredData, Predictions
 from depthai_nodes.message import Keypoints
 
@@ -39,6 +40,11 @@ from utils import websocket_server
 # "right" / "left" filtrano; "any" disattiva il filtro (entrambe le mani).
 _VALID_HANDEDNESS = {"right", "left", "any"}
 _DEFAULT_HANDEDNESS = "right"
+
+# Lato (in pixel) del ROI quadrato centrato sul palmo per il campionamento
+# della depth: la mediana dei valori non-zero in questa finestra è più
+# robusta del singolo pixel centrale a fori/rumore della depth map.
+_DEPTH_SAMPLE_HALF = 4  # → finestra 9x9
 
 
 def _label_from_prediction(pred: float) -> str:
@@ -65,9 +71,27 @@ class GestureBridgeNode(dai.node.HostNode):
     def __init__(self):
         super().__init__()
         self.gathered_data_input = self.createInput()
+        # Input dedicato per la depth, decouplato dal sync di gathered_data:
+        # NeuralDepth e palm-detection hanno latenze diverse e sincronizzarli
+        # via link_args(gathered, depth) accumula mismatch nelle code interne
+        # → dopo decine di migliaia di frame la pipeline si blocca. Tenendo
+        # qui una coda non-bloccante di dimensione 1 il producer sovrascrive
+        # sempre l'ultimo frame e niente si accumula.
+        self.depth_input = self.createInput()
+        self.depth_input.setBlocking(False)
+        self.depth_input.setMaxSize(1)
+        self._latest_depth: Optional[dai.ImgFrame] = None
+
         self._padding = 0.1
         self._confidence_threshold = 0.7
         self._tracker = GestureTracker()
+
+        # Range distanza palm dalla camera (mm). Detections fuori range
+        # vengono scartate; di default il filtro è attivo solo se main.py
+        # passa una depth_frame valida (per il path replay/single-cam resta off).
+        self._depth_min_mm = 0
+        self._depth_max_mm = 0
+        self._depth_filter_enabled = False
 
         # Mano dominante (configurata dalla web app via WebSocket).
         # Le detection con label diversa vengono scartate prima di entrare
@@ -83,11 +107,21 @@ class GestureBridgeNode(dai.node.HostNode):
     def build(
         self,
         gathered_data: dai.Node.Output,
+        depth_frame: Optional[dai.Node.Output] = None,
         padding: float = 0.1,
         confidence_threshold: float = 0.5,
+        depth_min_mm: int = 0,
+        depth_max_mm: int = 0,
     ) -> "GestureBridgeNode":
         self._padding = padding
         self._confidence_threshold = confidence_threshold
+        if depth_frame is not None and depth_max_mm > depth_min_mm > 0:
+            self._depth_min_mm = depth_min_mm
+            self._depth_max_mm = depth_max_mm
+            self._depth_filter_enabled = True
+            depth_frame.link(self.depth_input)
+        # Solo gathered_data drive il process(): la depth è "best-effort",
+        # letta opportunisticamente dall'input non-bloccante.
         self.link_args(gathered_data)
         return self
 
@@ -99,6 +133,16 @@ class GestureBridgeNode(dai.node.HostNode):
 
         with self._dominant_lock:
             dominant = self._dominant_hand
+
+        # Depth pull non-bloccante: prendi l'ultimo frame se è arrivato dal
+        # giro precedente, altrimenti riusa il cached. Un piccolo lag (1–3
+        # frame) non è osservabile per il filtro distanza.
+        depth_array = None
+        if self._depth_filter_enabled:
+            new_depth = self.depth_input.tryGet()
+            if new_depth is not None:
+                self._latest_depth = new_depth
+            depth_array = self._depth_to_array(self._latest_depth)
 
         # Filtro mano dominante: scarta la mano non-selezionata in settings.
         # Loop completo (no break al primo confidence ok) così la dominante
@@ -116,9 +160,25 @@ class GestureBridgeNode(dai.node.HostNode):
             if dominant != "any" and hand_label != dominant:
                 continue
 
+            bbox = detection.getBoundingBox()
+
+            # Filtro distanza: campiono la depth attorno al centro del palmo
+            # e tengo solo le mani nel range chirurgico [DEPTH_MIN, DEPTH_MAX].
+            # Detection senza depth valida (fuori frame, finestra tutta-zero)
+            # → scartata: meglio perdere un frame che reagire a una mano
+            # spuria di un'altra persona dietro/davanti al medico.
+            depth_mm: Optional[int] = None
+            if self._depth_filter_enabled:
+                depth_mm = self._sample_depth_mm(
+                    depth_array, bbox.center.x, bbox.center.y
+                )
+                if depth_mm is None:
+                    continue
+                if not (self._depth_min_mm <= depth_mm <= self._depth_max_mm):
+                    continue
+
             # Remap dei 21 landmark dalle coords del crop a quelle del frame intero
             # (stesso calcolo di AnnotationNode.process)
-            bbox = detection.getBoundingBox()
             palm_x = bbox.center.x
             palm_y = bbox.center.y
             w = bbox.size.width
@@ -150,8 +210,9 @@ class GestureBridgeNode(dai.node.HostNode):
                 break
 
             event = _to_ws_event(tracker_event)
+            depth_str = f"{depth_mm}mm" if depth_mm is not None else "—"
             print(f"[gesture] {event['gesture']:<12}  "
-                  f"hand={hand_label}  "
+                  f"hand={hand_label}  depth={depth_str}  "
                   f"clients={websocket_server.client_count()}")
             websocket_server.send_event(event)
 
@@ -162,6 +223,47 @@ class GestureBridgeNode(dai.node.HostNode):
         # dominante esce dal frame ma quella non-dominante è ancora visibile).
         if not processed_any:
             self._tracker.reset()
+
+    # ── Depth helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _depth_to_array(depth_frame: Optional[dai.ImgFrame]) -> Optional[np.ndarray]:
+        """Estrae il frame depth come array (H, W) di uint16 millimetri.
+        Restituisce None se non c'è depth (path single-cam/replay) o se il
+        frame è degenere."""
+        if depth_frame is None:
+            return None
+        try:
+            arr = depth_frame.getCvFrame()
+        except Exception:
+            return None
+        if arr is None or arr.ndim < 2 or arr.size == 0:
+            return None
+        return arr
+
+    @staticmethod
+    def _sample_depth_mm(
+        depth_array: Optional[np.ndarray], cx_norm: float, cy_norm: float,
+    ) -> Optional[int]:
+        """Campiona la depth attorno al centro del bbox e ritorna la mediana
+        in mm dei pixel non-zero (0 = "no measurement"). None se la finestra
+        non contiene misurazioni valide."""
+        if depth_array is None:
+            return None
+        h, w = depth_array.shape[:2]
+        cx = int(round(cx_norm * w))
+        cy = int(round(cy_norm * h))
+        if not (0 <= cx < w and 0 <= cy < h):
+            return None
+        x0 = max(0, cx - _DEPTH_SAMPLE_HALF)
+        x1 = min(w, cx + _DEPTH_SAMPLE_HALF + 1)
+        y0 = max(0, cy - _DEPTH_SAMPLE_HALF)
+        y1 = min(h, cy + _DEPTH_SAMPLE_HALF + 1)
+        roi = depth_array[y0:y1, x0:x1]
+        valid = roi[roi > 0]
+        if valid.size == 0:
+            return None
+        return int(np.median(valid))
 
     # ── Controllo handedness via WebSocket ──────────────────────────────────
 

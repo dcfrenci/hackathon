@@ -270,6 +270,12 @@ def recognize_gesture(kpts: List[Tuple[float, float]]) -> Optional[str]:
     node, oppure None. Per i consumatori interni usare l'enum HandPose.
     """
     arr = np.asarray(kpts, dtype=float)
+    # Guard frame degeneri (wrist e MCP medio coincidenti, capita raramente
+    # al warmup del landmark model o su detection borderline): _hand_size = 0
+    # → ZeroDivisionError nei classificatori. Rilevato anche da chiamanti
+    # esterni come annotation_node, dove un crash uccide l'intera pipeline.
+    if _hand_size(arr) < 1e-6:
+        return None
 
     pinch_or_drag = _classify_pinch_or_drag(arr)
     if pinch_or_drag is not None:
