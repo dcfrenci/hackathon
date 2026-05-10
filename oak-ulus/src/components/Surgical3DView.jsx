@@ -132,7 +132,7 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
   }, []);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'grid', gridTemplateColumns: '200px 1fr 340px', background: '#050507', padding: '24px', gap: '24px', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'grid', gridTemplateColumns: '200px 1fr', background: '#050507', padding: '24px', gap: '24px', boxSizing: 'border-box' }}>
       {/* Left Sidebar */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', zIndex: 10 }}>
         
@@ -169,6 +169,18 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
       </div>
 
       <div style={{ position: 'relative', height: '100%', overflow: 'hidden', borderRadius: '40px', background: '#d1d1d1', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        
+        {/* Overlaid Patient Info Block */}
+        <div className="glass-panel" style={{ position: 'absolute', top: '24px', left: '24px', background: 'rgba(15, 15, 17, 0.85)', borderRadius: '16px', border: '1px solid var(--primary)', padding: '16px', zIndex: 100, backdropFilter: 'blur(10px)', minWidth: '220px', pointerEvents: 'none' }}>
+          <div className="label-small" style={{ fontSize: '9px', color: '#fff', marginBottom: '8px' }}>PATIENT INFORMATION</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: '500', marginBottom: '4px' }}>MARIO ROSSI</div>
+          <div className="label-small" style={{ color: 'var(--primary)', marginBottom: '12px', fontSize: '9px' }}>{scanTitle}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div><div className="label-small" style={{ fontSize: '8px' }}>PATIENT ID</div><div style={{ fontSize: '0.8rem' }}>#9982-X</div></div>
+            <div><div className="label-small" style={{ fontSize: '8px' }}>FILE DATE</div><div style={{ fontSize: '0.8rem' }}>24/05/2024</div></div>
+          </div>
+        </div>
+
         <Canvas camera={{ position: [10, 10, 10], fov: 45, near: 0.0001 }} shadows>
           <color attach="background" args={['#d1d1d1']} />
 
@@ -209,16 +221,6 @@ export default function Surgical3DView({ patientId = '8842-XJ' }) {
           </div>
         )}
       </div>
-
-      <aside style={{ background: 'rgba(15, 15, 17, 0.5)', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.05)', padding: '32px', display: 'flex', flexDirection: 'column', zIndex: 10 }}>
-        <div className="label-small" style={{ fontSize: '11px', color: '#fff', marginBottom: '32px' }}>PATIENT INFORMATION</div>
-        <div style={{ fontSize: '1.4rem', fontWeight: '500', marginBottom: '8px' }}>MARIO ROSSI</div>
-        <div className="label-small" style={{ color: 'var(--primary)', marginBottom: '24px' }}>{scanTitle}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          <div><div className="label-small">PATIENT ID</div><div style={{ fontSize: '0.9rem' }}>#9982-X</div></div>
-          <div><div className="label-small">FILE DATE</div><div style={{ fontSize: '0.9rem' }}>24/05/2024</div></div>
-        </div>
-      </aside>
     </div>
   );
 }
