@@ -48,9 +48,9 @@ export default function XrayCarousel({ patientId = "patient_1" }) {
   useEffect(() => {
     xrayImages.forEach((img) => {
       const image = new Image();
-      image.src = `/Xrays/${patientId}/${img}`;
+      image.src = `/Xrays/8842-XJ/${img}`;
     });
-  }, [patientId]);
+  }, []);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: '#0f0f11' }}>
@@ -105,19 +105,56 @@ export default function XrayCarousel({ patientId = "patient_1" }) {
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
 
-        <img 
-          key={currentIndex}
-          src={`/Xrays/${patientId}/${xrayImages[currentIndex]}`} 
-          alt={`Xray slice ${currentIndex + 1}`}
-          className="xray-image-transition"
-          style={{ 
-            maxHeight: '95%', 
-            maxWidth: '85%', 
-            objectFit: 'contain',
-            borderRadius: '20px',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-          }} 
-        />
+        {/* 3D Coverflow Carousel */}
+        <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', perspective: '1500px' }}>
+          {[-2, -1, 0, 1, 2].map((offset) => {
+            const index = (currentIndex + offset + xrayImages.length) % xrayImages.length;
+            
+            let translateX = 0;
+            let scale = 1;
+            let zIndex = 10;
+            let opacity = 1;
+            let rotateY = 0;
+
+            if (offset === 0) {
+              translateX = 0; scale = 1; zIndex = 10; opacity = 1; rotateY = 0;
+            } else if (offset === -1) {
+              translateX = -55; scale = 0.85; zIndex = 5; opacity = 0.6; rotateY = 20;
+            } else if (offset === 1) {
+              translateX = 55; scale = 0.85; zIndex = 5; opacity = 0.6; rotateY = -20;
+            } else if (offset === -2) {
+              translateX = -95; scale = 0.7; zIndex = 2; opacity = 0.25; rotateY = 30;
+            } else if (offset === 2) {
+              translateX = 95; scale = 0.7; zIndex = 2; opacity = 0.25; rotateY = -30;
+            }
+
+            return (
+              <img
+                key={xrayImages[index]} // Critical: Key must be bound to the image so React animates it instead of re-mounting
+                src={`/Xrays/8842-XJ/${xrayImages[index]}`}
+                alt={`Xray slice ${index + 1}`}
+                style={{
+                  position: 'absolute',
+                  height: '95%',
+                  maxWidth: '75%',
+                  objectFit: 'contain',
+                  borderRadius: '24px',
+                  boxShadow: offset === 0 ? '0 40px 80px rgba(0,0,0,0.9)' : '0 15px 35px rgba(0,0,0,0.6)',
+                  transform: `translateX(${translateX}%) scale(${scale}) rotateY(${rotateY}deg)`,
+                  zIndex,
+                  opacity,
+                  transition: 'transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s ease, box-shadow 0.6s ease',
+                  cursor: offset !== 0 ? 'pointer' : 'default',
+                  border: offset === 0 ? '2px solid rgba(255,255,255,0.1)' : '2px solid transparent'
+                }}
+                onClick={() => {
+                  if (offset < 0) handlePrev();
+                  if (offset > 0) handleNext();
+                }}
+              />
+            );
+          })}
+        </div>
 
         {/* Right Arrow */}
         <button 
