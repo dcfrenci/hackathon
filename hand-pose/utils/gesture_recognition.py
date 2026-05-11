@@ -1,31 +1,26 @@
 """
-gesture_recognition.py — Riconoscimento di pose statiche e gesti dinamici della
-mano per il controllo touchless di un'interfaccia medica.
+gesture_recognition.py — Static pose recognition and temporal gesture classification
+for touchless control of a medical imaging interface.
 
-Architettura a due livelli:
+Two-level architecture:
 
-    recognize_gesture(kpts)       → HandPose | None    (un singolo frame)
-    GestureTracker.update(label, kpts) → Event | None  (state-machine temporale)
+    recognize_gesture(kpts)            → HandPose | None    (single frame)
+    GestureTracker.update(label, kpts) → Event | None       (temporal state machine)
 
-Le pose statiche (PINCH, DRAG, FIVE, PEACE_H) sono fisicamente distinte:
-l'utente sceglie l'azione con la posa delle dita, non con il movimento. La
-state-machine combina la posa "committed" (dopo filtraggio di flicker) con il
-movimento del palmo per emettere eventi discreti consumati dal bridge node.
+Static poses (PINCH, DRAG, FIVE, PEACE_H) are physically distinct: the user
+selects the action via finger shape, not motion. The state machine combines the
+committed pose (after flicker filtering) with palm movement to emit discrete
+events consumed by the bridge node.
 
-Eventi emessi:
-    CLICK         — rilascio di PINCH dopo durata/movimento accettabili
-    DRAG_*        — DRAG con spostamento sopra soglia (asse dominante, continuo:
-                    chainabile mantenendo la posa). Il behaviour "one-shot per
-                    gesto" usato dai selettori è applicato lato consumer (vedi
-                    useGesture options.oneShot), così il 3D viewer mantiene il
-                    controllo continuo per yaw/pitch/zoom.
-    SWIPE_*       — FIVE con movimento orizzontale sopra soglia
-    BACK          — ingresso nella posa PEACE_H (one-shot)
+Events emitted:
+    CLICK         — PINCH released within acceptable duration and movement
+    DRAG_*        — DRAG with displacement above threshold (dominant axis,
+                    continuous: chainable while holding the pose)
+    SWIPE_*       — FIVE with horizontal displacement above threshold
+    BACK          — entering PEACE_H pose (one-shot)
 
-Convenzione segno: dx > 0 = destra, dy > 0 = basso (coordinate immagine).
-Inversioni vanno fatte nel layer bridge / web app, non qui.
-
-Le note di taratura sono in coda al modulo.
+Sign convention: dx > 0 = right, dy > 0 = down (image coordinates).
+Inversions belong in the bridge / web app layer, not here.
 """
 
 import time
@@ -36,33 +31,32 @@ import numpy as np
 
 
 # =============================================================================
-# Tipi pubblici: pose statiche ed eventi della state-machine
+# Public types: static poses and state-machine events
 # =============================================================================
 
 
 class HandPose(str, Enum):
-    """Posa statica riconosciuta in un singolo frame."""
-    PINCH = "PINCH"      # pollice+indice toccati, 3 dita estese  → click
-    DRAG = "DRAG"        # pollice+indice toccati, 3 dita ripiegate → drag
-    FIVE = "FIVE"        # 5 dita estese → swipe
-    PEACE_H = "PEACE_H"  # pollice+indice estesi, altre 3 ripiegate → back
+    """Static pose recognised in a single frame."""
+    PINCH  = "PINCH"    # thumb+index touching, 3 fingers extended  → click
+    DRAG   = "DRAG"     # thumb+index touching, 3 fingers curled    → drag
+    FIVE   = "FIVE"     # all 5 fingers extended                    → swipe
+    PEACE_H = "PEACE_H" # thumb+index extended at ~90°, others curled → back
 
 
 class EventType(str, Enum):
-    """Eventi emessi dalla state-machine temporale."""
-    CLICK = "CLICK"
-    DRAG_LEFT = "DRAG_LEFT"
-    DRAG_RIGHT = "DRAG_RIGHT"
-    DRAG_UP = "DRAG_UP"
-    DRAG_DOWN = "DRAG_DOWN"
-    SWIPE_LEFT = "SWIPE_LEFT"
+    """Events emitted by the temporal state machine."""
+    CLICK       = "CLICK"
+    DRAG_LEFT   = "DRAG_LEFT"
+    DRAG_RIGHT  = "DRAG_RIGHT"
+    DRAG_UP     = "DRAG_UP"
+    DRAG_DOWN   = "DRAG_DOWN"
+    SWIPE_LEFT  = "SWIPE_LEFT"
     SWIPE_RIGHT = "SWIPE_RIGHT"
-    BACK = "BACK"
+    BACK        = "BACK"
 
 
-# Inversi per il direction lock: dopo un evento direzionale, il suo opposto
-# è bloccato per un breve intervallo per evitare che il movimento di ritorno
-# della mano triggeri il gesto opposto.
+# After a directional event, block the opposite direction for a short interval
+# to prevent the return motion from triggering the reverse gesture.
 _OPPOSITE_EVENT: Dict[str, str] = {
     EventType.DRAG_LEFT.value:   EventType.DRAG_RIGHT.value,
     EventType.DRAG_RIGHT.value:  EventType.DRAG_LEFT.value,
@@ -72,12 +66,12 @@ _OPPOSITE_EVENT: Dict[str, str] = {
     EventType.SWIPE_RIGHT.value: EventType.SWIPE_LEFT.value,
 }
 
-# Eventi one-shot (non continui) soggetti a cooldown post-emissione.
+# One-shot events subject to a post-emission cooldown.
 _ONE_SHOT_EVENTS = frozenset({EventType.CLICK.value, EventType.BACK.value})
 
 
 # =============================================================================
-# Indici dei landmark MediaPipe Hand (0-20)
+# MediaPipe Hand landmark indices (0–20)
 # =============================================================================
 
 WRIST = 0
@@ -87,49 +81,48 @@ MIDDLE_MCP, MIDDLE_PIP, MIDDLE_DIP, MIDDLE_TIP = 9, 10, 11, 12
 RING_MCP, RING_PIP, RING_DIP, RING_TIP = 13, 14, 15, 16
 LITTLE_MCP, LITTLE_PIP, LITTLE_DIP, LITTLE_TIP = 17, 18, 19, 20
 
-# Triplette (tip, dip, pip) delle 4 dita lunghe.
+# (tip, dip, pip) triples for the 4 long fingers.
 _LONG_FINGERS_TDP: Tuple[Tuple[int, int, int], ...] = (
-    (INDEX_TIP, INDEX_DIP, INDEX_PIP),
+    (INDEX_TIP,  INDEX_DIP,  INDEX_PIP),
     (MIDDLE_TIP, MIDDLE_DIP, MIDDLE_PIP),
-    (RING_TIP, RING_DIP, RING_PIP),
+    (RING_TIP,   RING_DIP,   RING_PIP),
     (LITTLE_TIP, LITTLE_DIP, LITTLE_PIP),
 )
 
-# Coppie (tip, pip) delle dita non-indice (medio, anulare, mignolo): usate
-# nei check PINCH/DRAG/PEACE_H per le "altre 3 dita".
+# (tip, pip) pairs for the non-index fingers (middle, ring, little),
+# used in PINCH/DRAG/PEACE_H checks for the "other 3 fingers".
 _OTHER_FINGERS_TP: Tuple[Tuple[int, int], ...] = (
     (MIDDLE_TIP, MIDDLE_PIP),
-    (RING_TIP, RING_PIP),
+    (RING_TIP,   RING_PIP),
     (LITTLE_TIP, LITTLE_PIP),
 )
 
 
 # =============================================================================
-# Soglie di classificazione (tarate empiricamente — vedi note in coda)
+# Classification thresholds (empirically tuned)
 # =============================================================================
 
-# PINCH/DRAG: distanza pollice-indice / hand_size sotto questa soglia indica
-# le 2 dita "toccate".
+# PINCH/DRAG: thumb-index distance / hand_size below this → fingers "touching".
 _PINCH_THRESHOLD = 0.40
 
-# Tolleranze rotation-invariant per dita ripiegate / estese. > 1 crea una
-# zona morta che evita flicker ai bordi.
-_FINGER_CURLED_TOL = 1.05
+# Rotation-invariant tolerances for curled/extended fingers. Values > 1 create
+# a dead zone that prevents flicker at the boundary between poses.
+_FINGER_CURLED_TOL   = 1.05
 _FINGER_EXTENDED_TOL = 1.10
 
-# Pollice esteso: somma dei 3 angoli alta + rapporto delle distanze alto.
-_THUMB_ANGLE_SUM_THRESHOLD = 460.0
+# Thumb extended: high sum of 3 joint angles AND high distance ratio.
+_THUMB_ANGLE_SUM_THRESHOLD  = 460.0
 _THUMB_DIST_RATIO_THRESHOLD = 1.2
 
-# PEACE_H ("L shape"): angolo tra direzione pollice e direzione indice deve
-# essere vicino a 90°, e le due punte devono essere ben separate.
-_PEACE_H_ANGLE_MIN = 60.0   # gradi
-_PEACE_H_ANGLE_MAX = 120.0  # gradi
-_PEACE_H_MIN_SPREAD = 0.50  # distanza pollice-indice / hand_size (> soglia pinch)
+# PEACE_H ("L shape"): angle between thumb and index directions must be ~90°,
+# and the two tips must be well separated.
+_PEACE_H_ANGLE_MIN  = 60.0   # degrees
+_PEACE_H_ANGLE_MAX  = 120.0  # degrees
+_PEACE_H_MIN_SPREAD = 0.50   # thumb-index distance / hand_size (> pinch threshold)
 
 
 # =============================================================================
-# Helper geometrici
+# Geometric helpers
 # =============================================================================
 
 
@@ -138,45 +131,41 @@ def _distance(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _angle_deg(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
-    """Angolo (in gradi) ∠abc, con b come vertice."""
+    """Angle ∠abc in degrees, with b as vertex."""
     ba = a - b
     bc = c - b
     cosine = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-    return float(np.degrees(np.arccos(cosine)))
+    return float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))))
 
 
 def _hand_size(kpts: np.ndarray) -> float:
-    """Distanza polso → MCP del medio. Riferimento di scala invariante alla
-    distanza dalla camera, usato per normalizzare tutte le altre distanze."""
+    """Wrist → middle-MCP distance: a scale reference invariant to camera distance."""
     return _distance(kpts[WRIST], kpts[MIDDLE_MCP])
 
 
 def _finger_curled(
     kpts: np.ndarray, tip: int, pip: int, tol: float = _FINGER_CURLED_TOL,
 ) -> bool:
-    """Dito ripiegato se la punta è più vicina al polso del PIP.
-    Rotation-invariant: sostituisce il check kpts[tip].y < kpts[pip].y, che
-    fallisce quando la mano è ruotata (dita non più orientate verso l'alto)."""
+    """Rotation-invariant curl check: tip closer to wrist than PIP.
+    Replaces the y-based check (tip.y < pip.y) that breaks on rotated hands."""
     return _distance(kpts[tip], kpts[WRIST]) < _distance(kpts[pip], kpts[WRIST]) * tol
 
 
 def _finger_extended(
     kpts: np.ndarray, tip: int, pip: int, tol: float = _FINGER_EXTENDED_TOL,
 ) -> bool:
-    """Dito esteso se la punta è significativamente più lontana dal polso del
-    PIP. tol > 1 crea una "zona morta" fra esteso e ripiegato → posa intermedia
-    non viene classificata né come PINCH né come DRAG, evita flicker."""
+    """Rotation-invariant extension check. tol > 1 creates a dead zone between
+    extended and curled, preventing flicker on intermediate poses."""
     return _distance(kpts[tip], kpts[WRIST]) > _distance(kpts[pip], kpts[WRIST]) * tol
 
 
 def _thumb_extended(kpts: np.ndarray) -> bool:
-    """Pollice esteso: somma dei 3 angoli articolari alta E rapporto delle
-    distanze (THUMB_IP→INDEX_MCP) / (THUMB_MCP→THUMB_IP) sopra soglia.
-    Combinazione tarata sul check originale (legacy)."""
+    """Thumb extended: high sum of 3 joint angles AND high distance ratio
+    (THUMB_IP→INDEX_MCP) / (THUMB_MCP→THUMB_IP)."""
     angle_sum = (
-        _angle_deg(kpts[WRIST], kpts[THUMB_CMC], kpts[THUMB_MCP])
+        _angle_deg(kpts[WRIST],     kpts[THUMB_CMC], kpts[THUMB_MCP])
         + _angle_deg(kpts[THUMB_CMC], kpts[THUMB_MCP], kpts[THUMB_IP])
-        + _angle_deg(kpts[THUMB_MCP], kpts[THUMB_IP], kpts[THUMB_TIP])
+        + _angle_deg(kpts[THUMB_MCP], kpts[THUMB_IP],  kpts[THUMB_TIP])
     )
     if angle_sum <= _THUMB_ANGLE_SUM_THRESHOLD:
         return False
@@ -188,8 +177,8 @@ def _thumb_extended(kpts: np.ndarray) -> bool:
 
 
 def _thumb_index_angle(kpts: np.ndarray) -> float:
-    """Angolo (in gradi) tra la direzione del pollice (MCP→TIP) e quella
-    dell'indice (MCP→TIP). Usato per richiedere ~90° nella posa PEACE_H."""
+    """Angle between thumb direction (MCP→TIP) and index direction (MCP→TIP).
+    Used to require ~90° for the PEACE_H pose."""
     thumb_dir = kpts[THUMB_TIP] - kpts[THUMB_MCP]
     index_dir = kpts[INDEX_TIP] - kpts[INDEX_MCP]
     norm = np.linalg.norm(thumb_dir) * np.linalg.norm(index_dir)
@@ -200,18 +189,17 @@ def _thumb_index_angle(kpts: np.ndarray) -> float:
 
 
 # =============================================================================
-# Riconoscimento pose statiche (singolo frame)
+# Static pose recognition (single frame)
 # =============================================================================
 
 
 def _classify_pinch_or_drag(kpts: np.ndarray) -> Optional[HandPose]:
-    """Distingue PINCH da DRAG quando pollice+indice si toccano: la differenza
-    sta nelle altre 3 dita (estese vs ripiegate). Posa intermedia → None,
-    evita flicker fra i due label durante la transizione."""
+    """Distinguish PINCH from DRAG when thumb+index are touching: the difference
+    is the other 3 fingers (extended vs curled). Intermediate pose → None to
+    prevent flicker during transitions."""
     pinch_dist = _distance(kpts[THUMB_TIP], kpts[INDEX_TIP]) / _hand_size(kpts)
     if pinch_dist >= _PINCH_THRESHOLD:
         return None
-
     if all(_finger_curled(kpts, tip, pip) for tip, pip in _OTHER_FINGERS_TP):
         return HandPose.DRAG
     if all(_finger_extended(kpts, tip, pip) for tip, pip in _OTHER_FINGERS_TP):
@@ -220,9 +208,9 @@ def _classify_pinch_or_drag(kpts: np.ndarray) -> Optional[HandPose]:
 
 
 def _is_peace_h(kpts: np.ndarray) -> bool:
-    """PEACE_H ("L shape"): pollice + indice estesi a ~90°, bene separati,
-    altre 3 dita ripiegate. L'angolo e la distanza minima evitano confusione
-    con DRAG (dita vicine) e con pose intermedie (angolo non a 90°)."""
+    """PEACE_H ("L shape"): thumb + index extended at ~90°, well separated,
+    other 3 fingers curled. Angle and minimum spread prevent confusion with
+    DRAG (fingers close) and intermediate poses (wrong angle)."""
     spread = _distance(kpts[THUMB_TIP], kpts[INDEX_TIP]) / _hand_size(kpts)
     if spread < _PEACE_H_MIN_SPREAD:
         return False
@@ -236,19 +224,16 @@ def _is_peace_h(kpts: np.ndarray) -> bool:
 
 
 def _is_five(kpts: np.ndarray) -> bool:
-    """FIVE: tutte le 5 dita estese. Rotation-invariant come PINCH/DRAG/PEACE_H.
+    """FIVE: all 5 fingers extended, rotation-invariant.
 
-    Storicamente questo check usava il confronto y-based (tip.y < dip.y < pip.y),
-    che però richiede la mano orientata verso l'alto: durante uno swipe laterale
-    l'utente inclina spesso la mano e l'ordinamento y si rompe per qualche frame
-    → committed esce da FIVE → l'anchor di `_five_start_pos` viene resettato a
-    metà movimento e il successivo step può far sparare lo swipe nella
-    direzione sbagliata.
+    The y-based check (tip.y < dip.y < pip.y) breaks when the hand tilts
+    during a lateral swipe: the y-ordering fails for a few frames, committed
+    drops out of FIVE, and the swipe anchor resets mid-motion — causing the
+    next step to fire in the wrong direction.
 
-    Falsi positivi non aumentano: PINCH/DRAG (indice ripiegato verso il pollice)
-    e PEACE_H (medio/anulare/mignolo ripiegati) falliscono comunque
-    `_finger_extended` su almeno un dito, e hanno precedenza più alta in
-    `recognize_gesture`."""
+    False positives do not increase: PINCH/DRAG and PEACE_H still fail
+    _finger_extended on at least one finger and take higher precedence in
+    recognize_gesture."""
     if not _thumb_extended(kpts):
         return False
     return all(
@@ -258,22 +243,20 @@ def _is_five(kpts: np.ndarray) -> bool:
 
 
 def recognize_gesture(kpts: List[Tuple[float, float]]) -> Optional[str]:
-    """Classifica la posa statica di un singolo frame.
+    """Classify the static pose of a single frame.
 
-    Ordine di precedenza (importante: pose ambigue si risolvono qui):
-        1. PINCH / DRAG   (pollice+indice toccati, dominano se attive)
-        2. PEACE_H        (posa "il 2")
-        3. FIVE           (5 dita estese)
-        4. None           (nessuna posa riconosciuta o intermedia)
+    Precedence order (resolves ambiguous poses):
+        1. PINCH / DRAG   (thumb+index touching — dominant when active)
+        2. PEACE_H
+        3. FIVE
+        4. None           (no pose recognised or intermediate state)
 
-    Restituisce il nome della posa come stringa per compatibilità con il bridge
-    node, oppure None. Per i consumatori interni usare l'enum HandPose.
+    Returns the pose name as a string (compatible with the bridge node),
+    or None. Internal consumers should use the HandPose enum.
     """
     arr = np.asarray(kpts, dtype=float)
-    # Guard frame degeneri (wrist e MCP medio coincidenti, capita raramente
-    # al warmup del landmark model o su detection borderline): _hand_size = 0
-    # → ZeroDivisionError nei classificatori. Rilevato anche da chiamanti
-    # esterni come annotation_node, dove un crash uccide l'intera pipeline.
+    # Guard against degenerate frames (wrist == middle-MCP) that occur at
+    # model warm-up or on borderline detections: hand_size = 0 → ZeroDivisionError.
     if _hand_size(arr) < 1e-6:
         return None
 
@@ -288,38 +271,36 @@ def recognize_gesture(kpts: List[Tuple[float, float]]) -> Optional[str]:
 
 
 # =============================================================================
-# Helper della state-machine: filtri di flicker e gate temporali
+# State-machine helpers: flicker filters and temporal gates
 # =============================================================================
 
 
 class _StickyPoseLock:
-    """Filtra il flicker frame-by-frame del label raw di recognize_gesture.
+    """Filters frame-by-frame flicker from the raw recognize_gesture label.
 
-    Il classificatore può oscillare fra label adiacenti per 1 frame ai bordi
-    delle soglie (es. PINCH che diventa DRAG per un frame se un dito si rilassa).
-    La posa "committed" cambia solo dopo K frame consecutivi dello stesso
-    nuovo label, dove K dipende dalla transizione (vedi _TRANSITION_K)."""
+    The classifier can oscillate between adjacent labels for 1 frame at
+    threshold boundaries. The committed pose changes only after K consecutive
+    frames of the same new label, where K depends on the transition type
+    (see _TRANSITION_K)."""
 
     _DEFAULT_K = 2
-    # Tarato per assorbire flicker da 1 frame senza aggiungere lag percepibile
-    # (~67ms a 30fps per K=2).
+    # Tuned to absorb 1-frame flicker without adding perceptible lag
+    # (~67 ms at 30 fps for K=2).
     _TRANSITION_K: Dict[Tuple[Optional[str], Optional[str]], int] = {
-        # Inizio sessione (mano appena entrata in frame): reattivo, K=1.
+        # Hand just entered frame: be reactive, K=1.
         (None, HandPose.PINCH.value):   1,
         (None, HandPose.DRAG.value):    1,
         (None, HandPose.FIVE.value):    1,
         (None, HandPose.PEACE_H.value): 1,
-        # DRAG → FIVE: transizione fisica grossa (estendere tutte le 5 dita),
-        # se vista in 1-2 frame è quasi sempre flicker.
+        # DRAG→FIVE: large physical transition; 1-2 frame occurrence is flicker.
         (HandPose.DRAG.value, HandPose.FIVE.value): 3,
-        # PEACE_H ↔ FIVE: alziamo K per ridurre falsi positivi durante
-        # transizioni FIVE↔altro che attraversano una "via di mezzo" simile
-        # a PEACE_H.
-        (HandPose.FIVE.value, HandPose.PEACE_H.value): 3,
-        (HandPose.PEACE_H.value, HandPose.FIVE.value): 3,
-        # DRAG/PINCH → PEACE_H: il rilascio di un pinch/drag può attraversare
-        # una forma simile a PEACE_H (pollice+indice che si aprono). K=4
-        # (~133ms a 30fps) evita BACK spurio immediatamente dopo click/drag.
+        # PEACE_H↔FIVE: higher K to reduce false positives during transitions
+        # that pass through a PEACE_H-like intermediate shape.
+        (HandPose.FIVE.value,   HandPose.PEACE_H.value): 3,
+        (HandPose.PEACE_H.value, HandPose.FIVE.value):   3,
+        # DRAG/PINCH→PEACE_H: releasing a pinch/drag can briefly resemble
+        # PEACE_H (thumb+index opening). K=4 (~133 ms at 30 fps) prevents
+        # a spurious BACK immediately after a click or drag.
         (HandPose.DRAG.value,  HandPose.PEACE_H.value): 4,
         (HandPose.PINCH.value, HandPose.PEACE_H.value): 4,
     }
@@ -335,8 +316,7 @@ class _StickyPoseLock:
         self._candidate_count = 0
 
     def update(self, raw_label: Optional[str]) -> bool:
-        """Aggiorna la posa committed con il nuovo label raw.
-        Ritorna True se la posa committed è cambiata in questo frame."""
+        """Advance with the new raw label. Returns True if committed changed."""
         if raw_label == self.committed:
             self._candidate = None
             self._candidate_count = 0
@@ -360,7 +340,7 @@ class _StickyPoseLock:
 
 
 class _PositionSmoother:
-    """EMA sulla posizione del palmo per filtrare il jitter dei landmark."""
+    """EMA on palm position to filter landmark jitter."""
 
     def __init__(self, alpha: float):
         self._alpha = alpha
@@ -370,9 +350,9 @@ class _PositionSmoother:
         self._smoothed = None
 
     def update(self, raw_pos: np.ndarray, force_reset: bool = False) -> np.ndarray:
-        """Restituisce la posizione filtrata. force_reset=True azzera lo stato:
-        usato al cambio posa per evitare che l'EMA "rincorra" la posizione
-        precedente generando movimento spurio nei primi frame."""
+        """Return filtered position. force_reset=True clears state on pose change
+        to prevent the EMA from "chasing" the previous position and producing
+        spurious motion in the first frames of a new pose."""
         if self._smoothed is None or force_reset:
             self._smoothed = raw_pos.copy()
         else:
@@ -381,9 +361,8 @@ class _PositionSmoother:
 
 
 class _DirectionLock:
-    """Dopo un evento direzionale, blocca l'evento opposto per N secondi.
-    Evita che il movimento di ritorno della mano triggeri il gesto opposto.
-    Stessa direzione e altri assi restano disponibili."""
+    """After a directional event, block its opposite for N seconds.
+    Same direction and other axes remain available."""
 
     def __init__(self, lock_seconds: float):
         self._lock_seconds = lock_seconds
@@ -403,24 +382,23 @@ class _DirectionLock:
 
 
 # =============================================================================
-# State-machine principale
+# Main state machine
 # =============================================================================
 
 
 class GestureTracker:
-    """Tracker stateful che combina la posa committed corrente con il
-    movimento del palmo per emettere eventi del flusso medico:
+    """Stateful tracker that combines the current committed pose with palm
+    movement to emit discrete events:
 
-      • CLICK                    — rilascio di PINCH (durata + movimento ok)
-      • DRAG_{LEFT,RIGHT,UP,DOWN} — DRAG con spostamento sopra soglia
-      • SWIPE_{LEFT,RIGHT}        — FIVE con movimento orizzontale sopra soglia
-      • BACK                      — ingresso in PEACE_H (one-shot)
+      • CLICK                      — PINCH released within acceptable duration/movement
+      • DRAG_{LEFT,RIGHT,UP,DOWN}  — DRAG with displacement above threshold
+      • SWIPE_{LEFT,RIGHT}         — FIVE with horizontal displacement above threshold
+      • BACK                       — entering PEACE_H (one-shot)
 
-    PINCH e DRAG sono pose fisicamente distinte: l'utente sceglie con la posa
-    delle 3 dita se vuole cliccare o trascinare. Una transizione PINCH → DRAG
-    NON emette CLICK; DRAG → PINCH non emette nulla.
+    PINCH and DRAG are physically distinct poses: the user selects click vs drag
+    via finger shape. PINCH→DRAG does NOT emit CLICK; DRAG→PINCH emits nothing.
 
-    Uso:
+    Usage:
         tracker = GestureTracker()
         for frame_kpts in stream:
             label = recognize_gesture(frame_kpts)
@@ -429,16 +407,15 @@ class GestureTracker:
                 send(event)
     """
 
-    # Default tunable. Vedi note in coda al modulo per la guida di taratura.
-    DEFAULT_SWIPE_THRESHOLD = 0.65
-    DEFAULT_DRAG_THRESHOLD = 0.35
-    DEFAULT_CLICK_MAX_MOVEMENT = 1.0
-    DEFAULT_CLICK_MIN_DURATION = 0.08
-    DEFAULT_CLICK_MAX_DURATION = 1.5
+    DEFAULT_SWIPE_THRESHOLD            = 0.65
+    DEFAULT_DRAG_THRESHOLD             = 0.35
+    DEFAULT_CLICK_MAX_MOVEMENT         = 1.0
+    DEFAULT_CLICK_MIN_DURATION         = 0.08
+    DEFAULT_CLICK_MAX_DURATION         = 1.5
     DEFAULT_RELEASE_CONFIRMATION_FRAMES = 2
-    DEFAULT_GESTURE_COOLDOWN = 0.5
-    DEFAULT_DIRECTION_LOCK = 2.0
-    DEFAULT_SMOOTHING_ALPHA = 0.45
+    DEFAULT_GESTURE_COOLDOWN           = 0.5
+    DEFAULT_DIRECTION_LOCK             = 2.0
+    DEFAULT_SMOOTHING_ALPHA            = 0.45
 
     def __init__(
         self,
@@ -452,32 +429,29 @@ class GestureTracker:
         direction_lock_seconds: float = DEFAULT_DIRECTION_LOCK,
         smoothing_alpha: float = DEFAULT_SMOOTHING_ALPHA,
     ):
-        # Soglie e durate per gli eventi.
-        self._swipe_threshold = swipe_threshold
-        self._drag_threshold = drag_threshold
+        self._swipe_threshold  = swipe_threshold
+        self._drag_threshold   = drag_threshold
         self._click_max_movement = click_max_movement
         self._click_min_duration = click_min_duration
         self._click_max_duration = click_max_duration
         self._release_confirmation_frames = release_confirmation_frames
         self._gesture_cooldown = gesture_cooldown_seconds
 
-        # Componenti (filtri/gate) — composizione, non ereditarietà.
         self._pose_lock = _StickyPoseLock()
-        self._smoother = _PositionSmoother(smoothing_alpha)
-        self._dir_lock = _DirectionLock(direction_lock_seconds)
+        self._smoother  = _PositionSmoother(smoothing_alpha)
+        self._dir_lock  = _DirectionLock(direction_lock_seconds)
 
-        # Cooldown dedicato BACK dopo CLICK: vive fuori dalla session-state
-        # perché deve sopravvivere ai cicli di reset durante _gesture_cooldown,
-        # altrimenti la finestra effettiva si riduce a _gesture_cooldown.
+        # Back cooldown lives outside session state so it survives the resets
+        # that happen during _gesture_cooldown; otherwise the effective window
+        # collapses to _gesture_cooldown.
         self._back_cooldown_until = 0.0
 
-        # Stato per-posa.
         self._reset_session_state()
 
     # ── Public API ──────────────────────────────────────────────────────────
 
     def reset(self) -> None:
-        """Riazzera completamente il tracker (es. quando la mano esce dal frame)."""
+        """Full reset (e.g. when the hand leaves the frame)."""
         self._pose_lock.reset()
         self._smoother.reset()
         self._dir_lock.reset()
@@ -485,34 +459,29 @@ class GestureTracker:
         self._reset_session_state()
 
     def update(self, gesture: Optional[str], kpts) -> Optional[dict]:
-        """Avanza la state-machine di un frame.
-        `gesture` è il label raw da `recognize_gesture` (può essere None).
-        Restituisce un dict {"type": <EventType>} o None."""
+        """Advance the state machine by one frame.
+        `gesture` is the raw label from recognize_gesture (may be None).
+        Returns {"type": <EventType>} or None."""
         kpts_arr = np.asarray(kpts, dtype=float)
         hand_size = _hand_size(kpts_arr)
         if hand_size < 1e-6:
-            # Frame degenere (mano collassata): non aggiornare nulla.
             return None
         raw_pos = kpts_arr[MIDDLE_MCP].astype(float)
 
-        # 1. Filtra il flicker del label e ottieni la posa committed.
         commit_changed = self._pose_lock.update(gesture)
         if commit_changed:
-            # Cambio posa = rilascio implicito → libera tutti i lock di
-            # direzione, così l'utente può ripetere un gesto senza attesa.
+            # Pose change = implicit release: reset direction locks so the user
+            # can repeat a gesture without waiting for the lock to expire.
             self._dir_lock.reset()
         committed = self._pose_lock.committed
 
-        # 2. Smoothing della posizione (reset al cambio posa per evitare drift).
         pos = self._smoother.update(raw_pos, force_reset=commit_changed)
         now = time.monotonic()
 
-        # 3. Cooldown post-evento: scarta tutto, tieni le sessioni a freddo.
         if now < self._cooldown_until:
             self._reset_session_state()
             return None
 
-        # 4. State-machine per posa (mutuamente esclusive).
         if committed == HandPose.PINCH.value:
             self._update_pinch_session(pos, hand_size, now)
             event: Optional[dict] = None
@@ -521,60 +490,53 @@ class GestureTracker:
         else:
             event = self._update_release(now)
 
-        # Dopo un CLICK, blocca BACK per 1.5s: il rilascio del pinch apre
-        # naturalmente le dita e può attraversare la forma PEACE_H.
+        # After a CLICK, block BACK for 1.5 s: releasing a pinch naturally
+        # opens the fingers through a PEACE_H-like shape.
         if event is not None and event["type"] == EventType.CLICK.value:
             self._back_cooldown_until = now + 1.5
 
-        # 5. PEACE_H one-shot: BACK al primo frame in cui la posa è committed.
         if (commit_changed
                 and committed == HandPose.PEACE_H.value
                 and event is None
                 and now >= self._back_cooldown_until):
             event = {"type": EventType.BACK.value}
 
-        # 6. FIVE: gestione swipe (può sovrascrivere event di sopra; in pratica
-        #    accade solo in transizioni rare PINCH→FIVE+swipe nello stesso frame).
         five_event = self._update_five_session(committed, pos, hand_size, now)
         if five_event is not None:
             event = five_event
 
-        # 7. Cooldown applicato solo per eventi one-shot.
         if event is not None and event["type"] in _ONE_SHOT_EVENTS:
             self._cooldown_until = now + self._gesture_cooldown
 
         self._prev_committed_pose = committed
         return event
 
-    # ── Stato di sessione ───────────────────────────────────────────────────
+    # ── Session state ───────────────────────────────────────────────────────
 
     def _reset_session_state(self) -> None:
-        """Azzera tutti gli stati di sessione (PINCH/DRAG/FIVE) e il
-        riferimento alla posa precedente. Il cooldown e i filtri (smoother,
-        pose lock, dir lock) NON vengono toccati: hanno il loro reset."""
-        # Sessione PINCH
+        """Reset all per-pose session state. Filters (smoother, pose lock,
+        direction lock) have their own reset and are not touched here."""
         self._in_pinch = False
         self._non_pinch_count = 0
         self._pinch_start_time = 0.0
         self._pinch_total_movement = 0.0
         self._prev_pinch_pos: Optional[np.ndarray] = None
-        # Sessione DRAG
+
         self._in_drag = False
         self._drag_anchor: Optional[np.ndarray] = None
-        # Sessione FIVE
+
         self._five_start_pos: Optional[np.ndarray] = None
-        # Memoria della posa committed del frame precedente (per FIVE).
         self._prev_committed_pose: Optional[str] = None
-        # Cooldown post-evento.
+
         self._cooldown_until = 0.0
 
-    # ── Branch per posa (chiamati da update) ────────────────────────────────
+    # ── Per-pose branches (called from update) ───────────────────────────────
 
     def _update_pinch_session(
         self, pos: np.ndarray, hand_size: float, now: float,
     ) -> None:
-        """Stato durante un PINCH: accumula movimento per filtrare i click
-        accidentali. Non emette eventi: il CLICK arriva sul rilascio."""
+        """Accumulate movement during PINCH. CLICK is emitted on release,
+        not here."""
         self._non_pinch_count = 0
         if not self._in_pinch:
             self._in_pinch = True
@@ -587,7 +549,6 @@ class GestureTracker:
                 dy = float((pos[1] - self._prev_pinch_pos[1]) / hand_size)
                 self._pinch_total_movement += (dx * dx + dy * dy) ** 0.5
             self._prev_pinch_pos = pos
-        # Transizione DRAG → PINCH: cancella drag senza emettere nulla.
         if self._in_drag:
             self._in_drag = False
             self._drag_anchor = None
@@ -595,11 +556,10 @@ class GestureTracker:
     def _update_drag_session(
         self, pos: np.ndarray, hand_size: float, now: float,
     ) -> Optional[dict]:
-        """Stato durante un DRAG: emette un evento DRAG_* quando lo spostamento
-        dall'anchor supera la soglia sull'asse dominante. Anchor resettato
-        dopo ogni evento per permettere step concatenati."""
-        # Transizione PINCH → DRAG: NON emettere CLICK (era intenzione di drag).
+        """Emit DRAG_* when displacement from anchor exceeds threshold on the
+        dominant axis. Anchor resets after each event for chained steps."""
         if self._in_pinch:
+            # PINCH→DRAG: user intended to drag, not click.
             self._in_pinch = False
             self._non_pinch_count = 0
             self._prev_pinch_pos = None
@@ -617,8 +577,8 @@ class GestureTracker:
         if candidate is None:
             return None
 
-        # Anchor resettato anche se l'evento è bloccato dal direction lock:
-        # il movimento è "consumato", così il ritorno della mano non rimbalza.
+        # Reset anchor even when direction-locked: the motion is "consumed"
+        # so the return movement doesn't bounce the opposite event.
         self._drag_anchor = pos
         if self._dir_lock.is_locked(candidate, now):
             return None
@@ -626,21 +586,18 @@ class GestureTracker:
         return {"type": candidate}
 
     def _classify_drag_direction(self, dx: float, dy: float) -> Optional[str]:
-        """Asse dominante + soglia → tipo di evento DRAG_* o None."""
+        """Dominant axis + threshold → DRAG_* event type or None."""
         if abs(dx) >= abs(dy):
             if abs(dx) > self._drag_threshold:
-                return (EventType.DRAG_RIGHT.value if dx > 0
-                        else EventType.DRAG_LEFT.value)
+                return EventType.DRAG_RIGHT.value if dx > 0 else EventType.DRAG_LEFT.value
             return None
         if abs(dy) > self._drag_threshold:
-            return (EventType.DRAG_DOWN.value if dy > 0
-                    else EventType.DRAG_UP.value)
+            return EventType.DRAG_DOWN.value if dy > 0 else EventType.DRAG_UP.value
         return None
 
     def _update_release(self, now: float) -> Optional[dict]:
-        """Posa diversa da PINCH/DRAG: possibile rilascio di una sessione
-        attiva. Emette CLICK se il PINCH precedente era nei limiti accettabili."""
-        # Fine drag silenziosa.
+        """Non-PINCH/DRAG pose: handle release of an active session.
+        Emits CLICK if the preceding PINCH was within acceptable limits."""
         if self._in_drag:
             self._in_drag = False
             self._drag_anchor = None
@@ -648,16 +605,14 @@ class GestureTracker:
         if not self._in_pinch:
             return None
 
-        # Isteresi: serve N frame consecutivi di non-PINCH per confermare.
-        # Filtra i falsi rilasci dovuti a 1 frame "bucato" dal classificatore
-        # durante un click reale.
+        # Hysteresis: require N consecutive non-PINCH frames to confirm release
+        # and filter single-frame classifier misses during a real click.
         self._non_pinch_count += 1
         if self._non_pinch_count < self._release_confirmation_frames:
             return None
 
         duration = now - self._pinch_start_time
         movement = self._pinch_total_movement
-        # Reset stato PINCH ora che il rilascio è confermato.
         self._in_pinch = False
         self._non_pinch_count = 0
         self._prev_pinch_pos = None
@@ -675,30 +630,26 @@ class GestureTracker:
         hand_size: float,
         now: float,
     ) -> Optional[dict]:
-        """Posa FIVE attiva: traccia il punto di partenza e emette SWIPE_*
-        quando lo spostamento orizzontale dall'inizio supera la soglia."""
+        """Track FIVE pose and emit SWIPE_* when horizontal displacement from
+        the entry position exceeds the threshold."""
         five = HandPose.FIVE.value
         prev = self._prev_committed_pose
 
-        # Ingresso in FIVE: ancora il punto di partenza.
         if committed == five and prev != five:
             self._five_start_pos = pos
             return None
 
-        # Uscita da FIVE: rilascia il punto di partenza.
         if committed != five and prev == five:
             self._five_start_pos = None
             return None
 
-        # Stabile in FIVE: controlla la soglia di swipe.
         if committed == five and self._five_start_pos is not None:
             dx_norm = float((pos[0] - self._five_start_pos[0]) / hand_size)
             if abs(dx_norm) <= self._swipe_threshold:
                 return None
             swipe = (EventType.SWIPE_RIGHT.value if dx_norm > 0
                      else EventType.SWIPE_LEFT.value)
-            # Reset start_pos in ogni caso: movimento "consumato".
-            self._five_start_pos = pos
+            self._five_start_pos = pos  # consume the movement
             if self._dir_lock.is_locked(swipe, now):
                 return None
             self._dir_lock.apply(swipe, now)
@@ -716,48 +667,37 @@ __all__ = [
 
 
 # =============================================================================
-# Note di taratura
+# Live tuning guide
 # =============================================================================
-"""
-Tarature da fare dal vivo (parametri di GestureTracker):
-
-  swipe_threshold = 0.65
-    Spostamento orizzontale (in unità "hand_size") che fa scattare uno SWIPE.
-    0.65 ≈ una mano di ampiezza. Se gli swipe scattano troppo facilmente alza
-    a 1.0; se non scattano abbassa a 0.6.
-
-  drag_threshold = 0.35
-    Spostamento (in hand_size) dall'anchor per emettere un DRAG_*. Più piccolo
-    di swipe per permettere step fini quando si controlla yaw/roll del 3D.
-    Dopo l'evento l'anchor viene resettato → eventi concatenabili.
-
-  click_max_duration = 1.5
-    Durata massima del PINCH per essere CLICK. Tienilo largo: con sticky lock
-    + flicker, un click reale può durare 0.6-0.9s in committed time.
-
-  release_confirmation_frames = 2
-    A 30fps = ~66ms di latenza al rilascio. Se il classificatore è molto
-    rumoroso aumenta a 3 (100ms). Più alto = il CLICK arriva più lento.
-    A 60fps puoi salire a 3-4 frame senza che si senta.
-
-  smoothing_alpha = 0.45
-    EMA sulla posizione del MCP medio. 1.0 = nessuno smoothing (rumoroso →
-    drag spurio a mano ferma); valori bassi filtrano il jitter ma introducono
-    lag. 0.45 è un buon compromesso a 30fps.
-
-  direction_lock_seconds = 2.0
-    Dopo un drag/swipe, l'evento opposto è bloccato per questa durata. Si
-    azzera al cambio di posa committed (rilascio della mano) → l'utente può
-    "ricaricare" abbassando la mano e rialzandola.
-
-Segno di dx/dy: dipende da come la pipeline DepthAI restituisce le coordinate
-(mirrored o no). Se il modello 3D ruota al contrario, basta negare nel bridge
-layer, NON in questo modulo.
-
-Gesture disabilitate (non servono per il flusso medico, conservate per
-riferimento storico): PEACE / ONE / TWO / OK / THREE / FOUR / FIST. Le
-classificazioni originali si basavano sulla combinazione thumb_state /
-index_state / middle_state / ring_state / little_state in {0, 1, -1}, dove 1
-era esteso (y-based) e 0 era ripiegato. Se in futuro servono, si aggiungono
-come funzioni `_is_<pose>(kpts) -> bool` accanto a `_is_peace_h` e `_is_five`.
-"""
+#
+# swipe_threshold = 0.65
+#   Horizontal displacement (in hand_size units) to trigger SWIPE.
+#   0.65 ≈ one hand-width. Raise to 1.0 if swipes fire too easily;
+#   lower to 0.6 if they don't fire reliably.
+#
+# drag_threshold = 0.35
+#   Displacement (in hand_size) from anchor to emit DRAG_*.
+#   Smaller than swipe to allow fine-grained yaw/roll control in 3D view.
+#   Anchor resets after each event → steps are chainable.
+#
+# click_max_duration = 1.5
+#   Max PINCH duration for a CLICK. Keep it generous: with sticky lock +
+#   flicker, a real click can last 0.6–0.9 s in committed time.
+#
+# release_confirmation_frames = 2
+#   At 30 fps ≈ 66 ms of release latency. Increase to 3 (100 ms) if the
+#   classifier is noisy. At 60 fps you can use 3–4 without noticeable lag.
+#
+# smoothing_alpha = 0.45
+#   EMA on middle-MCP position. 1.0 = no smoothing (noisy → spurious drag
+#   at rest); lower values filter jitter but add lag. 0.45 is a good
+#   compromise at 30 fps.
+#
+# direction_lock_seconds = 2.0
+#   After a drag/swipe, the opposite event is blocked for this duration.
+#   Resets on pose change (hand lowered and raised) → user can "reload"
+#   without waiting for the full lock to expire.
+#
+# Sign of dx/dy depends on whether the DepthAI pipeline mirrors the frame.
+# If the 3D model rotates the wrong way, negate in the bridge layer,
+# not in this module.

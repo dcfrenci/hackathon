@@ -13,9 +13,9 @@ _, args = initialize_argparser()
 PADDING = 0.1
 CONFIDENCE_THRESHOLD = 0.7
 
-# Filtro distanza mano: solo le mani con depth in questo range vengono
-# considerate, le altre (dietro/davanti al medico) sono scartate prima della
-# state-machine. Espresse in millimetri (output uint16 di NeuralDepth).
+# Hand distance filter: only hands within this range are processed; others
+# (behind or in front of the surgeon) are discarded before the state machine.
+# Values in millimetres (uint16 output of NeuralDepth).
 DEPTH_MIN_MM = 500
 DEPTH_MAX_MM = 1000
 
@@ -62,9 +62,9 @@ with dai.Pipeline(device) as pipeline:
         cam_out = cam.requestOutput((768, 768), frame_type, fps=args.fps_limit)
     input_node = replay.out if args.media_path else cam_out
 
-    # Stereo + NeuralDepth: la depth viene poi allineata al frame RGB così
-    # possiamo campionarla nel bridge usando le coords normalizzate del bbox
-    # di palm detection. Solo modalità live camera (in replay non c'è stereo).
+    # Stereo + NeuralDepth: depth is aligned to the RGB frame so the bridge
+    # can sample it using the normalised bbox coordinates from palm detection.
+    # Live camera only — replay mode has no stereo.
     aligned_depth_out = None
     if not args.media_path:
         mono_left = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
@@ -75,8 +75,8 @@ with dai.Pipeline(device) as pipeline:
         neural_depth = pipeline.create(dai.node.NeuralDepth)
         neural_depth.build(left_out, right_out, dai.DeviceModelZoo.NEURAL_DEPTH_SMALL)
 
-        # Riproietta la depth (640x400 stereo perspective) al frame RGB
-        # (768x768, prospettiva CAM_A) usando le extrinsics di calibrazione.
+        # Reproject depth (640×400 stereo perspective) to the RGB frame
+        # (768×768, CAM_A perspective) using calibration extrinsics.
         depth_align = pipeline.create(dai.node.ImageAlign)
         neural_depth.depth.link(depth_align.input)
         input_node.link(depth_align.inputAlignTo)
