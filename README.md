@@ -20,6 +20,22 @@
 
 <hr>
 
+<!-- code_chunk_output -->
+# Table of Contents
+- [Demos](#demos)
+  - [Achievement](#achievement)
+- [Aim of the Project](#aim-of-the-project)
+- [Architecture](#architecture)
+  - [Hand Gesture Model (MediaPipe)](#hand-gesture-model-mediapipe)
+  - [Depth Model](#depth-model)
+- [Chain Loop (Flow of the Model)](#chain-loop-flow-of-the-model)
+- [Setup](#setup)
+- [Running the Project](#running-the-project)
+  - [Terminal 1: Hand Gesture Model (Backend):](#terminal-1-hand-gesture-model-backend)
+  - [Terminal 2: Web Application (Frontend)](#terminal-2-web-application-frontend)
+
+<!-- /code_chunk_output -->
+
 ## Demos
 
 <p align="center">
@@ -46,17 +62,18 @@ The gesture recognition relies on the MediaPipe Hand Landmarker available in the
 
 <!-- code_chunk_output -->
 
-- [Demos](#demos)
-  - [Achievement](#achievement)
-- [Aim of the Project](#aim-of-the-project)
-- [Architecture](#architecture)
-  - [Hand Gesture Model (MediaPipe)](#hand-gesture-model-mediapipe)
-  - [Depth Model](#depth-model)
-- [Chain Loop (Flow of the Model)](#chain-loop-flow-of-the-model)
-- [Setup](#setup)
-- [Running the Project](#running-the-project)
-  - [Terminal 1: Hand Gesture Model (Backend):](#terminal-1-hand-gesture-model-backend)
-  - [Terminal 2: Web Application (Frontend)](#terminal-2-web-application-frontend)
+- [Table of Contents](#table-of-contents)
+  - [Demos](#demos)
+    - [Achievement](#achievement)
+  - [Aim of the Project](#aim-of-the-project)
+  - [Architecture](#architecture)
+    - [Hand Gesture Model (MediaPipe)](#hand-gesture-model-mediapipe)
+    - [Depth Model](#depth-model)
+  - [Chain Loop (Flow of the Model)](#chain-loop-flow-of-the-model)
+  - [Setup](#setup)
+  - [Running the Project](#running-the-project)
+    - [Terminal 1: Hand Gesture Model (Backend):](#terminal-1-hand-gesture-model-backend)
+    - [Terminal 2: Web Application (Frontend)](#terminal-2-web-application-frontend)
 
 <!-- /code_chunk_output -->
 
